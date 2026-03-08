@@ -23,6 +23,7 @@ models/
 wandb/
 runs/
 checkpoints/
+unsloth_compiled_cache/
 
 # Data (generated, not tracked)
 data/train.jsonl
