@@ -1,0 +1,42 @@
+# Virtual environment
+.venv/
+venv/
+
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Models and weights (large files)
+models/
+*.gguf
+*.safetensors
+*.bin
+*.pt
+
+# Training artifacts
+wandb/
+runs/
+checkpoints/
+
+# Data (generated, not tracked)
+data/train.jsonl
+data/eval.jsonl
+
+# Results (regenerated)
+results/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
