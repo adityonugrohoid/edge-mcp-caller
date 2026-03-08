@@ -5,8 +5,8 @@
 Prove that a specialist 270M model (tools baked in weights) beats FunctionGemma (generalist, schemas in prompt) on MCP filesystem operations.
 
 - [ ] Acquire Gemma 3 270M base model from HuggingFace
-- [ ] Define 3 MCP filesystem tool schemas (list_directory, read_file, search_files)
-- [ ] Build synthetic data generator (Claude API → 3-5K training examples)
+- [x] Define 3 MCP filesystem tool schemas (list_directory, read_file, search_files)
+- [x] Build synthetic data generator (NVIDIA NIM API → 3600 training examples)
 - [ ] Fine-tune with Unsloth LoRA (standard chat format, JSON output)
 - [ ] Merge adapter + convert to GGUF for Ollama
 - [ ] Build eval harness (tool selection accuracy + argument exact match)
@@ -63,4 +63,5 @@ Drop-in local MCP tool caller, packaged for distribution.
 - [ ] Benchmark on BFCL leaderboard
 
 ## Version History
+- 2026-03-09: Step 1 complete — 3600 clean training examples generated (1200/tool)
 - 2026-03-09: v0.1 scaffolded, concept finalized
