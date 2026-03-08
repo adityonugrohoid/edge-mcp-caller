@@ -1,0 +1,22 @@
+# Training
+torch
+transformers
+peft
+trl
+bitsandbytes
+unsloth
+datasets
+accelerate
+
+# Data generation
+anthropic
+
+# Inference & MCP
+httpx
+mcp
+
+# CLI output
+rich
+
+# Config
+python-dotenv

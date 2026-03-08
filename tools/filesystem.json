@@ -1,0 +1,52 @@
+{
+  "description": "MCP Filesystem Server tool definitions (reference only — NOT passed to model at inference time). These schemas define the target tools the specialist model is trained to call.",
+  "source": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+  "tools": [
+    {
+      "name": "list_directory",
+      "description": "Get a detailed listing of all files and directories in a specified path. Results distinguish between files and directories with [FILE] and [DIR] prefixes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to the directory to list"
+          }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "read_file",
+      "description": "Read the complete contents of a file from the file system. Handles various text encodings.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to the file to read"
+          }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "search_files",
+      "description": "Recursively search for files and directories matching a pattern.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Starting path for the search"
+          },
+          "pattern": {
+            "type": "string",
+            "description": "Glob pattern to match against file/directory names"
+          }
+        },
+        "required": ["path", "pattern"]
+      }
+    }
+  ]
+}
