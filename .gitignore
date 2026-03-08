@@ -28,6 +28,9 @@ checkpoints/
 data/train.jsonl
 data/eval.jsonl
 
+# Archive (tracked — baseline datasets for comparison)
+!data/archive/
+
 # Results (regenerated)
 results/
 
