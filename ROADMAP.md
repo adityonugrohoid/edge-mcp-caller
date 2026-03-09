@@ -21,12 +21,21 @@ Prove that a specialist 270M model (tools baked in weights) beats FunctionGemma 
 
 ## v0.2 — Write Operations
 
-Expand tool set to include write operations.
+Expand tool set to include write operations. Prove read vs write intent disambiguation.
 
-- [ ] Add write_file, create_directory tools (5 total)
-- [ ] Generate additional training data for write intent
-- [ ] Retrain and benchmark
-- [ ] Prove: model handles read vs write intent disambiguation
+- [x] Define write_file(path, content) and create_directory(path) tool schemas
+- [x] Switch data generation to Claude Code agents (Sonnet 4.6, orchestrated by Opus 4.6)
+- [x] Implement accumulate-then-merge data pipeline (timestamped batches in `data/generated/`, no overwrites)
+- [x] Generate training data across 3 categories:
+  - [x] Clean well-formed queries (65.8% — 6038 examples)
+  - [x] Messy real-world queries (22.8% — 2096 examples): typos, slang, abbreviations, grammar errors, voice transcription, filler/hedging, self-corrections
+  - [x] Adversarial disambiguation (11.3% — 1040 examples): read vs write confusion pairs
+- [x] Build `data/merge_dataset.py` — merge all `data/generated/` → train/eval split with dedup + validation (11 checks)
+- [x] Tag eval examples by category for robustness breakdown reporting
+- [x] Update `eval/benchmark.py` for 5 tools + per-category accuracy reporting
+- [ ] Retrain specialist on 5-tool dataset (8255 train examples)
+- [ ] Benchmark: overall accuracy + per-category breakdown (clean / messy / disambiguation)
+- [ ] Prove: model handles read vs write intent disambiguation AND noisy real-world queries
 
 ## v0.3 — Multi-Argument Tools
 
@@ -64,6 +73,8 @@ Drop-in local MCP tool caller, packaged for distribution.
 - [ ] Benchmark on BFCL leaderboard
 
 ## Version History
+- 2026-03-09: v0.2 data generation complete — 9174 examples (5 tools, 3 categories), 14 agent runs, 0 invalid
+- 2026-03-09: v0.2 pipeline infra — merge_dataset.py, updated benchmark.py for per-category reporting, tool schemas for write_file/create_directory
 - 2026-03-09: Step 5 complete — MCP client bridge + interactive CLI demo, v0.1 MVP complete
 - 2026-03-09: Step 4 complete — 4-model benchmark (temp=0): 90.8% specialist vs 23.3% GPT-OSS-120B vs 18.1% FunctionGemma vs 13.3% raw Gemma
 - 2026-03-09: Step 3 complete — merged LoRA + GGUF Q8_0 (272 MB), registered in Ollama

@@ -18,7 +18,7 @@ import mcp.types as types
 
 logger = logging.getLogger(__name__)
 
-VALID_TOOLS = {"list_directory", "read_file", "search_files"}
+VALID_TOOLS = {"list_directory", "read_file", "search_files", "write_file", "create_directory"}
 
 
 def parse_model_output(raw: str) -> dict:

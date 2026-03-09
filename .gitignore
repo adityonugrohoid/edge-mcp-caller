@@ -26,6 +26,7 @@ checkpoints/
 unsloth_compiled_cache/
 
 # Data (generated, not tracked)
+data/generated/
 data/train.jsonl
 data/eval.jsonl
 

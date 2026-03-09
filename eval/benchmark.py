@@ -66,6 +66,9 @@ MODELS = {
     },
 }
 
+# All valid tools for per-tool breakdown
+ALL_TOOLS = ["list_directory", "read_file", "search_files", "write_file", "create_directory"]
+
 # System prompt for raw Gemma 3 (few-shot, best-effort)
 RAW_GEMMA_SYSTEM_PROMPT = (
     "You are a tool router. Given a user query about filesystem operations, "
@@ -73,14 +76,18 @@ RAW_GEMMA_SYSTEM_PROMPT = (
     "Available tools:\n"
     "- list_directory(path): list files and directories at a path\n"
     "- read_file(path): read contents of a file\n"
-    "- search_files(path, pattern): search for files matching a glob pattern\n\n"
+    "- search_files(path, pattern): search for files matching a glob pattern\n"
+    "- write_file(path, content): create or overwrite a file with content\n"
+    "- create_directory(path): create a new directory\n\n"
     "Examples:\n"
     'User: "show files in docs/" → {"tool":"list_directory","args":{"path":"docs/"}}\n'
     'User: "read config.yaml" → {"tool":"read_file","args":{"path":"config.yaml"}}\n'
     'User: "find *.py in lib/" → {"tool":"search_files","args":{"path":"lib/","pattern":"*.py"}}\n'
     'User: "what\'s in the tests folder" → {"tool":"list_directory","args":{"path":"tests/"}}\n'
     'User: "show me README.md" → {"tool":"read_file","args":{"path":"README.md"}}\n'
-    'User: "find all .js files in src/" → {"tool":"search_files","args":{"path":"src/","pattern":"*.js"}}'
+    'User: "find all .js files in src/" → {"tool":"search_files","args":{"path":"src/","pattern":"*.js"}}\n'
+    'User: "save hello world to output.txt" → {"tool":"write_file","args":{"path":"output.txt","content":"hello world"}}\n'
+    'User: "make a new folder called utils" → {"tool":"create_directory","args":{"path":"utils/"}}'
 )
 
 console = Console()
@@ -323,8 +330,8 @@ def score_result(predicted: dict, expected: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-async def run_benchmark() -> dict:
-    """Run full benchmark across all 3 models."""
+async def run_benchmark() -> tuple[dict, list[dict]]:
+    """Run full benchmark across all models. Returns (results, examples)."""
     console.print("[bold cyan]Edge MCP Caller — Benchmark (Step 4)[/bold cyan]\n")
 
     # Load eval data
@@ -334,7 +341,11 @@ async def run_benchmark() -> dict:
             ex = json.loads(line)
             query = ex["messages"][0]["content"]
             expected = json.loads(ex["messages"][1]["content"])
-            examples.append({"query": query, "expected": expected})
+            examples.append({
+                "query": query,
+                "expected": expected,
+                "category": ex.get("category", "clean"),
+            })
 
     console.print(f"Loaded {len(examples)} eval examples\n")
 
@@ -441,11 +452,13 @@ async def run_benchmark() -> dict:
             }
             console.print()
 
-    return all_results
+    return all_results, examples
 
 
-def compute_metrics(all_results: dict) -> dict:
+def compute_metrics(all_results: dict, examples_with_category: list[dict] | None = None) -> dict:
     """Compute aggregate metrics from benchmark results."""
+    if examples_with_category is None:
+        examples_with_category = []
     metrics = {}
 
     for model_key, data in all_results.items():
@@ -459,7 +472,7 @@ def compute_metrics(all_results: dict) -> dict:
 
         # Per-tool breakdown
         per_tool = {}
-        for tool_name in ["list_directory", "read_file", "search_files"]:
+        for tool_name in ALL_TOOLS:
             tool_results = [r for r in results if r["score"]["expected_tool"] == tool_name]
             if tool_results:
                 per_tool[tool_name] = {
@@ -468,6 +481,21 @@ def compute_metrics(all_results: dict) -> dict:
                     "args_acc": sum(1 for r in tool_results if r["score"]["args_correct"]) / len(tool_results),
                     "combined_acc": sum(1 for r in tool_results if r["score"]["combined_correct"]) / len(tool_results),
                 }
+
+        # Per-category breakdown (uses "category" tag from eval set)
+        per_category = {}
+        for category in ["clean", "messy", "adversarial"]:
+            cat_indices = [i for i, ex_data in enumerate(examples_with_category)
+                          if ex_data.get("category") == category]
+            if cat_indices:
+                cat_results = [results[i] for i in cat_indices if i < len(results)]
+                if cat_results:
+                    per_category[category] = {
+                        "count": len(cat_results),
+                        "tool_acc": sum(1 for r in cat_results if r["score"]["tool_correct"]) / len(cat_results),
+                        "args_acc": sum(1 for r in cat_results if r["score"]["args_correct"]) / len(cat_results),
+                        "combined_acc": sum(1 for r in cat_results if r["score"]["combined_correct"]) / len(cat_results),
+                    }
 
         # Token and latency stats (exclude errors)
         valid = [r for r in results if not r["prediction"].get("error")]
@@ -483,6 +511,7 @@ def compute_metrics(all_results: dict) -> dict:
             "args_accuracy": args_acc,
             "combined_accuracy": combined_acc,
             "per_tool": per_tool,
+            "per_category": per_category,
             "avg_prompt_tokens": sum(prompt_tokens) / len(prompt_tokens) if prompt_tokens else 0,
             "avg_latency_ms": sum(latencies) / len(latencies) if latencies else 0,
             "median_latency_ms": sorted(latencies)[len(latencies) // 2] if latencies else 0,
@@ -532,7 +561,7 @@ def print_results(metrics: dict) -> None:
         tool_table.add_column("Args Acc", justify="right")
         tool_table.add_column("Combined", justify="right", style="bold")
 
-        for tool_name in ["list_directory", "read_file", "search_files"]:
+        for tool_name in ALL_TOOLS:
             pt = m["per_tool"].get(tool_name, {})
             if pt:
                 tool_table.add_row(
@@ -544,6 +573,28 @@ def print_results(metrics: dict) -> None:
                 )
 
         console.print(tool_table)
+
+        # Per-category breakdown (if available)
+        if m.get("per_category"):
+            cat_table = Table(title=f"Per-Category Breakdown: {m['description']}")
+            cat_table.add_column("Category", style="cyan")
+            cat_table.add_column("Count", justify="right")
+            cat_table.add_column("Tool Acc", justify="right")
+            cat_table.add_column("Args Acc", justify="right")
+            cat_table.add_column("Combined", justify="right", style="bold")
+
+            for cat_name in ["clean", "messy", "adversarial"]:
+                pc = m["per_category"].get(cat_name, {})
+                if pc:
+                    cat_table.add_row(
+                        cat_name,
+                        str(pc["count"]),
+                        f"{pc['tool_acc']:.1%}",
+                        f"{pc['args_acc']:.1%}",
+                        f"{pc['combined_acc']:.1%}",
+                    )
+
+            console.print(cat_table)
 
     # Latency comparison
     lat_table = Table(title="Latency Comparison (ms, excluding model load)")
@@ -599,7 +650,7 @@ def generate_report_html(metrics: dict) -> str:
     per_tool_rows = []
     for model_key in model_order:
         m = metrics[model_key]
-        for tool_name in ["list_directory", "read_file", "search_files"]:
+        for tool_name in ALL_TOOLS:
             pt = m["per_tool"].get(tool_name, {})
             if pt:
                 per_tool_rows.append(f"""
@@ -610,6 +661,23 @@ def generate_report_html(metrics: dict) -> str:
             <td>{pt['tool_acc']:.1%}</td>
             <td>{pt['args_acc']:.1%}</td>
             <td><strong>{pt['combined_acc']:.1%}</strong></td>
+        </tr>""")
+
+    # Per-category rows
+    per_cat_rows = []
+    for model_key in model_order:
+        m = metrics[model_key]
+        for cat_name in ["clean", "messy", "adversarial"]:
+            pc = m.get("per_category", {}).get(cat_name, {})
+            if pc:
+                per_cat_rows.append(f"""
+        <tr>
+            <td>{m['description']}</td>
+            <td>{cat_name}</td>
+            <td>{pc['count']}</td>
+            <td>{pc['tool_acc']:.1%}</td>
+            <td>{pc['args_acc']:.1%}</td>
+            <td><strong>{pc['combined_acc']:.1%}</strong></td>
         </tr>""")
 
     # Build summary cards dynamically
@@ -699,6 +767,16 @@ def generate_report_html(metrics: dict) -> str:
         </tbody>
     </table>
 
+    <h2>Per-Category Breakdown</h2>
+    <table>
+        <thead>
+            <tr><th>Model</th><th>Category</th><th>Count</th><th>Tool Acc</th><th>Args Acc</th><th>Combined</th></tr>
+        </thead>
+        <tbody>
+            {"".join(per_cat_rows)}
+        </tbody>
+    </table>
+
     <h2>Latency Comparison</h2>
     <table>
         <thead>
@@ -768,8 +846,8 @@ def save_results(all_results: dict, metrics: dict) -> None:
 
 
 async def main() -> None:
-    all_results = await run_benchmark()
-    metrics = compute_metrics(all_results)
+    all_results, eval_examples = await run_benchmark()
+    metrics = compute_metrics(all_results, eval_examples)
     print_results(metrics)
     save_results(all_results, metrics)
     console.print("\n[bold green]Benchmark complete![/bold green]")
