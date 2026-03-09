@@ -159,7 +159,18 @@ hf_hub_download(BASE_MODEL, "tokenizer_config.json", local_dir=str(MERGED_DIR))
 ## Token Policy
 Never limit tokens on any API call — no `max_tokens`, `num_ctx`, `num_predict`.
 
-## Live Pipeline Results (v0.1, 360 queries through MCP)
+## Benchmark Results
+
+### v0.2 (919 eval, 5 tools, 3 categories)
+- **95.3% tool routing** (876/919) — the model correctly identifies intent
+- **48.6% strict exact-match** — bottlenecked by path ambiguity, not model capability
+- Path analysis: 329/429 args failures are path mismatches (model generates plausible alternative paths like `solar_panels/monitoring/` vs `solar/monitoring/`)
+- Per-tool tool routing: create_directory 100%, read_file 97.8%, search_files 95.1%, list_directory 93.4%, write_file 90.3%
+- Per-category tool routing: messy 97.6%, adversarial 96.2%, clean 94.4% (clean has longer, more ambiguous paths)
+- 22 avg prompt tokens, 341ms avg latency
+- Results: `results/benchmark_v02_specialist.json`
+
+### v0.1 (360 eval, 3 tools)
 `python demo/cli.py -n 360` — full eval set through live MCP pipeline:
 - **99.2% tool accuracy, 90.8% combined, 100% MCP success** (0 parse errors, 0 MCP failures)
 - 20 avg prompt tokens, 151ms model latency, 111ms MCP latency, 263ms total e2e
