@@ -39,23 +39,39 @@ Expand tool set to include write operations. Prove read vs write intent disambig
 
 **Result**: 95.3% tool routing accuracy across 919 eval examples (5 tools, 3 categories). 48.6% strict exact-match — bottlenecked by path ambiguity (329/429 args failures are path mismatches where model generates plausible alternative paths, not trailing-slash issues). create_directory 100% tool routing. Per-category tool accuracy: clean 94.4%, messy 97.6%, adversarial 96.2% — model handles noisy queries and read/write disambiguation well. 22 avg prompt tokens, 341ms avg latency.
 
-## v0.3 — Multi-Argument Tools
+## v0.3 — Full Filesystem + Unified Generation + Scaling Experiment
 
-Add tools with structured, multi-field arguments.
+Complete filesystem server (8 tools). Add Git MCP server schemas (6 tools). Design unified generation standard for all 14 tools. Generate data once, train once, benchmark at each tool count to find 270M breaking point.
 
-- [ ] Add edit_file(path, old_text, new_text) tool
-- [ ] Generate training data with multi-field args
-- [ ] Retrain and benchmark
-- [ ] Prove: model generates correct multi-field tool calls
+### Infrastructure
+- [ ] Archive v0.2 generated data (polluted — invented paths, generated content)
+- [ ] Add edit_file(path, old_text, new_text), move_file(source, destination), directory_tree(path) to filesystem schemas
+- [ ] Define 6 git tool schemas in `tools/git.json` (git_status, git_diff_staged, git_commit, git_log, git_branch, git_create_branch)
+- [ ] Create unified generation standard (`docs/generation-standard.md`) for all 14 tools
+- [ ] Update merge_dataset.py validation for 14 tools
+- [ ] Update MCP client bridge for edit_file translation (simplified → MCP edits[] format)
 
-## v0.4 — Multi-MCP Server
+### Data + Training
+- [ ] Generate fresh training data for ALL 14 tools (~1000/tool, even distribution)
+- [ ] Categories: 70% clean, 15% messy, 15% disambiguation — all with extractable args only
+- [ ] Retrain specialist on full 14-tool dataset
 
-Expand to a second MCP server (git or memory).
+### Scaling Benchmark
+- [ ] Eval at 3-tool subset (v0.1 tools: list_directory, read_file, search_files)
+- [ ] Eval at 5-tool subset (v0.2 tools: + write_file, create_directory)
+- [ ] Eval at 8-tool subset (full filesystem: + edit_file, move_file, directory_tree)
+- [ ] Eval at 14-tool subset (filesystem + git)
+- [ ] Report: scaling curve — where does 270M accuracy degrade?
+- [ ] Prove: multi-field extraction + similar-tool disambiguation + cross-server routing
 
-- [ ] Add second MCP server's tools to training set
-- [ ] Retrain specialist for combined tool set
-- [ ] Benchmark cross-server routing accuracy
-- [ ] Prove: specialist can scale to multiple servers
+## v0.4 — Git MCP Server Integration
+
+Wire up the Git MCP server end-to-end. Model already trained on git tools from v0.3 data.
+
+- [ ] Implement Git MCP client bridge (repo_path injection from config)
+- [ ] End-to-end demo: git queries → specialist → Git MCP server
+- [ ] Live pipeline benchmark (like v0.1 CLI batch run)
+- [ ] Prove: specialist routes across 2 MCP servers with 14 tools in production
 
 ## v0.5 — Agentic Chains
 
@@ -75,6 +91,7 @@ Drop-in local MCP tool caller, packaged for distribution.
 - [ ] Benchmark on BFCL leaderboard
 
 ## Version History
+- 2026-03-10: v0.3 infrastructure — archived v0.2 data, defined all 14 tools (8 filesystem + 6 git), created unified generation standard, scaling experiment design
 - 2026-03-09: v0.2 benchmark complete — 95.3% tool routing (919 eval, 5 tools), 48.6% strict match (path ambiguity bottleneck); per-category tool acc: clean 94.4%, messy 97.6%, adversarial 96.2%
 - 2026-03-09: v0.2 training complete — fresh retrain on 8255 examples (5 tools), 1548 steps, 2h 10m; GGUF tokenizer fix (Unsloth strips added_tokens_decoder); 7/7 sanity tests pass
 - 2026-03-09: v0.2 data generation complete — 9174 examples (5 tools, 3 categories), 14 agent runs, 0 invalid

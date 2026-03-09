@@ -1,0 +1,79 @@
+{
+  "description": "Git MCP Server tool definitions (reference only — NOT passed to model at inference time). These schemas define the simplified model output format; the MCP client bridge translates to full server format by injecting repo_path from config.",
+  "source": "https://github.com/modelcontextprotocol/servers/tree/main/src/git",
+  "tools": [
+    {
+      "name": "git_status",
+      "description": "Show the working tree status of the git repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "git_diff_staged",
+      "description": "Show changes that are staged for the next commit.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "git_commit",
+      "description": "Record staged changes to the repository with a commit message.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "The commit message"
+          }
+        },
+        "required": ["message"]
+      }
+    },
+    {
+      "name": "git_log",
+      "description": "Show the commit history of the repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "max_count": {
+            "type": "integer",
+            "description": "Maximum number of commits to show"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "git_branch",
+      "description": "List all branches in the repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "git_create_branch",
+      "description": "Create a new branch in the repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "branch_name": {
+            "type": "string",
+            "description": "Name of the new branch"
+          },
+          "base_branch": {
+            "type": "string",
+            "description": "Branch to create from (defaults to current branch)"
+          }
+        },
+        "required": ["branch_name"]
+      }
+    }
+  ]
+}
