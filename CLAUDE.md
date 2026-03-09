@@ -74,8 +74,11 @@ python train/merge_and_convert.py
 python eval/benchmark.py
 
 # Step 5: Demo (end-to-end: query → model → MCP server → result)
-python demo/cli.py                  # default: current directory
-python demo/cli.py /path/to/dir    # specify allowed directory
+python demo/cli.py                  # interactive mode, current directory
+python demo/cli.py /path/to/dir    # interactive, specify allowed directory
+python demo/cli.py -n 10            # batch mode: 10 eval examples
+python demo/cli.py -n 360           # batch mode: full eval set
+python demo/cli.py -n 5 --verbose   # batch with per-query detail
 ```
 
 ## MVP Tools (v0.1 — Filesystem Read-Only)
