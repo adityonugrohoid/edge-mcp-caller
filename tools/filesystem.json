@@ -47,6 +47,38 @@
         },
         "required": ["path", "pattern"]
       }
+    },
+    {
+      "name": "write_file",
+      "description": "Create a new file or completely overwrite an existing file with new content.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to the file to write"
+          },
+          "content": {
+            "type": "string",
+            "description": "Content to write to the file"
+          }
+        },
+        "required": ["path", "content"]
+      }
+    },
+    {
+      "name": "create_directory",
+      "description": "Create a new directory or ensure a directory exists. Creates parent directories if needed.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to the directory to create"
+          }
+        },
+        "required": ["path"]
+      }
     }
   ]
 }
