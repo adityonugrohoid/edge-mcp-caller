@@ -57,6 +57,7 @@ Result to user
 - `demo/cli.py` — Interactive CLI demo
 - `tools/filesystem.json` — MCP filesystem tool definitions (reference only, NOT passed to model)
 - `docs/training-lessons.md` — Battle-tested training/conversion troubleshooting guide
+- `docs/real-world-use-cases.md` — Real-world deployment scenarios for edge specialist models
 
 ## Commands
 ```bash
