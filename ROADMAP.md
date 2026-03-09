@@ -34,8 +34,10 @@ Expand tool set to include write operations. Prove read vs write intent disambig
 - [x] Tag eval examples by category for robustness breakdown reporting
 - [x] Update `eval/benchmark.py` for 5 tools + per-category accuracy reporting
 - [x] Retrain specialist on 5-tool dataset (8255 train examples)
-- [ ] Benchmark: overall accuracy + per-category breakdown (clean / messy / disambiguation)
-- [ ] Prove: model handles read vs write intent disambiguation AND noisy real-world queries
+- [x] Benchmark: overall accuracy + per-category breakdown (clean / messy / disambiguation)
+- [x] Prove: model handles read vs write intent disambiguation AND noisy real-world queries
+
+**Result**: 95.3% tool routing accuracy across 919 eval examples (5 tools, 3 categories). 48.6% strict exact-match — bottlenecked by path ambiguity (329/429 args failures are path mismatches where model generates plausible alternative paths, not trailing-slash issues). create_directory 100% tool routing. Per-category tool accuracy: clean 94.4%, messy 97.6%, adversarial 96.2% — model handles noisy queries and read/write disambiguation well. 22 avg prompt tokens, 341ms avg latency.
 
 ## v0.3 — Multi-Argument Tools
 
@@ -73,6 +75,7 @@ Drop-in local MCP tool caller, packaged for distribution.
 - [ ] Benchmark on BFCL leaderboard
 
 ## Version History
+- 2026-03-09: v0.2 benchmark complete — 95.3% tool routing (919 eval, 5 tools), 48.6% strict match (path ambiguity bottleneck); per-category tool acc: clean 94.4%, messy 97.6%, adversarial 96.2%
 - 2026-03-09: v0.2 training complete — fresh retrain on 8255 examples (5 tools), 1548 steps, 2h 10m; GGUF tokenizer fix (Unsloth strips added_tokens_decoder); 7/7 sanity tests pass
 - 2026-03-09: v0.2 data generation complete — 9174 examples (5 tools, 3 categories), 14 agent runs, 0 invalid
 - 2026-03-09: v0.2 pipeline infra — merge_dataset.py, updated benchmark.py for per-category reporting, tool schemas for write_file/create_directory
