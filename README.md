@@ -127,7 +127,10 @@ python train/merge_and_convert.py
 python eval/benchmark.py
 
 # Step 5: Interactive demo
-python demo/cli.py
+python demo/cli.py                  # interactive mode
+python demo/cli.py -n 10            # batch: 10 eval examples through MCP
+python demo/cli.py -n 360           # batch: full eval set through MCP
+python demo/cli.py -n 5 --verbose   # batch with per-query pipeline detail
 ```
 
 ## Benchmark
@@ -158,12 +161,72 @@ python demo/cli.py
 
 Full results: [`results/benchmark.json`](results/benchmark.json) | [`results/report.html`](results/report.html) | [`docs/benchmark-methodology.md`](docs/benchmark-methodology.md)
 
+## Live Demo — End-to-End Pipeline
+
+Every query goes through the full pipeline: user query → Ollama specialist → JSON parse → MCP `tools/call` → real filesystem result. The CLI shows each step with metrics.
+
+### Single Query (verbose)
+
+```
+> find all Python files in eval/
+
+┌─────────────────────────── 1. Ollama Request ────────────────────────────┐
+│ {                                                                        │
+│   "model": "edge-mcp-caller:latest",                                     │
+│   "messages": [{"role": "user", "content": "find all Python files ..."}] │
+│ }                                                                        │
+└──────────────── POST http://localhost:11434/api/chat ────────────────────┘
+┌─────────────────────────── 2. Model Response ────────────────────────────┐
+│ Raw output:  {"tool":"search_files","args":{"path":"eval/","pattern":..} │
+│ Parsed tool: search_files                                                │
+│ Parsed args: {"path": "eval/", "pattern": "*.py"}                        │
+└──────────────────────────────────────────────────────────────────────────┘
+  Prompt tokens: 16 | Output tokens: 20 | Schema tokens: 0 (baked in)
+  Inference latency: 142ms
+
+┌─────────────────────────── 3. MCP Request ───────────────────────────────┐
+│ {"method": "tools/call",                                                 │
+│  "params": {"name": "search_files",                                      │
+│             "arguments": {"path": "eval/", "pattern": "*.py"}}}          │
+└──────────── stdio → @modelcontextprotocol/server-filesystem ─────────────┘
+┌─────────────────────────── 4. MCP Response ──────────────────────────────┐
+│ /home/user/projects/edge-mcp-caller/eval/benchmark.py                    │
+└──────────────────────────────────────────────────────────────────────────┘
+  MCP latency: 6ms | Total end-to-end: 149ms
+```
+
+### Full Eval Set — 360 Queries Through MCP
+
+`python demo/cli.py -n 360` — runs all 360 eval examples through the live MCP pipeline:
+
+| Metric | Value |
+|--------|-------|
+| Tool accuracy | **99.2%** (357/360) |
+| Args accuracy | **90.8%** (327/360) |
+| Combined accuracy | **90.8%** (327/360) |
+| MCP execution success | **100.0%** (360/360) |
+| Avg prompt tokens | 20 |
+| Avg model latency | 151ms |
+| Avg MCP latency | 111ms |
+| Avg total e2e latency | 263ms |
+| Throughput | 2.8 queries/sec |
+
+**0 MCP errors across 360 calls** — the model always produces valid, parseable JSON. Even when args are wrong (33 cases: trailing slashes, pattern formatting), the pipeline handles it gracefully without crashes.
+
+### Per-Tool MCP Pipeline Breakdown
+
+| Tool | Count | Tool Acc | Args Acc | Combined | MCP OK |
+|------|-------|----------|----------|----------|--------|
+| list_directory | 104 | 99.0% | 93.3% | 93.3% | 100.0% |
+| read_file | 125 | 99.2% | 96.0% | 96.0% | 100.0% |
+| search_files | 131 | 99.2% | 84.0% | 84.0% | 100.0% |
+
 ## Project Structure
 
 ```
 edge-mcp-caller/
 ├── data/
-│   ├── generate_dataset.py       # Synthetic data gen via Claude API
+│   ├── generate_dataset.py       # Synthetic data gen via NVIDIA NIM API
 │   ├── train.jsonl                # Fine-tuning dataset
 │   └── eval.jsonl                 # Held-out eval set
 ├── tools/
@@ -184,12 +247,13 @@ edge-mcp-caller/
 ├── models/                        # Adapters + GGUF (gitignored)
 └── results/
     ├── benchmark.json             # Raw benchmark numbers
+    ├── cli_batch.json             # Full 360-query MCP pipeline results
     └── report.html                # Visual comparison report
 ```
 
 ## Roadmap
 
-- [ ] **v0.1** — 3 read-only filesystem tools, specialist fine-tune, beat FunctionGemma
+- [x] **v0.1** — 3 read-only filesystem tools, specialist fine-tune, beat FunctionGemma
 - [ ] **v0.2** — + write operations (5 tools)
 - [ ] **v0.3** — + multi-argument tools (edit_file)
 - [ ] **v0.4** — + second MCP server (multi-server routing)

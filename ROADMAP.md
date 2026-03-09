@@ -17,7 +17,7 @@ Prove that a specialist 270M model (tools baked in weights) beats FunctionGemma 
 
 **Win condition**: match or beat FunctionGemma 85% accuracy with 40x fewer prompt tokens.
 
-**Result**: 90.8% combined accuracy (temp=0, deterministic) vs GPT-OSS-120B's 23.3%, FunctionGemma's 18.1%, raw Gemma's 13.3% — with 13x fewer prompt tokens (20 vs 264). See [`docs/benchmark-methodology.md`](docs/benchmark-methodology.md).
+**Result**: 90.8% combined accuracy (temp=0, deterministic) vs GPT-OSS-120B's 23.3%, FunctionGemma's 18.1%, raw Gemma's 13.3% — with 13x fewer prompt tokens (20 vs 264). Full 360-query MCP pipeline run: 100% MCP execution success, 263ms avg e2e latency, 0 JSON parse errors. See [`docs/benchmark-methodology.md`](docs/benchmark-methodology.md).
 
 ## v0.2 — Write Operations
 
