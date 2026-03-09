@@ -73,8 +73,9 @@ python train/merge_and_convert.py
 # Step 4: Benchmark
 python eval/benchmark.py
 
-# Step 5: Demo
-python demo/cli.py
+# Step 5: Demo (end-to-end: query → model → MCP server → result)
+python demo/cli.py                  # default: current directory
+python demo/cli.py /path/to/dir    # specify allowed directory
 ```
 
 ## MVP Tools (v0.1 — Filesystem Read-Only)

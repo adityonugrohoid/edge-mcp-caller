@@ -12,8 +12,8 @@ Prove that a specialist 270M model (tools baked in weights) beats FunctionGemma 
 - [x] Build eval harness (tool selection accuracy + argument exact match)
 - [x] Run FunctionGemma on same eval set
 - [x] Head-to-head benchmark report (accuracy, prompt tokens, latency)
-- [ ] MCP client wrapper (JSON → MCP tools/call)
-- [ ] Interactive CLI demo
+- [x] MCP client wrapper (JSON → MCP tools/call)
+- [x] Interactive CLI demo
 
 **Win condition**: match or beat FunctionGemma 85% accuracy with 40x fewer prompt tokens.
 
@@ -64,6 +64,7 @@ Drop-in local MCP tool caller, packaged for distribution.
 - [ ] Benchmark on BFCL leaderboard
 
 ## Version History
+- 2026-03-09: Step 5 complete — MCP client bridge + interactive CLI demo, v0.1 MVP complete
 - 2026-03-09: Step 4 complete — 4-model benchmark (temp=0): 90.8% specialist vs 23.3% GPT-OSS-120B vs 18.1% FunctionGemma vs 13.3% raw Gemma
 - 2026-03-09: Step 3 complete — merged LoRA + GGUF Q8_0 (272 MB), registered in Ollama
 - 2026-03-09: Step 2 complete — fine-tuned Gemma 3 270M-IT with LoRA r=128 (3 epochs, 609 steps, 55 min)
