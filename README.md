@@ -16,7 +16,7 @@
 
 ## The Thesis
 
-Google's FunctionGemma takes Gemma 3 270M and makes it a **generalist** function caller — pass any tool schema in the prompt (~400 tokens), and it routes to the right tool. It achieves 85% accuracy after fine-tuning.
+Google's FunctionGemma takes Gemma 3 270M and makes it a **generalist** function caller — pass any tool schema in the prompt (~264 tokens), and it routes to the right tool.
 
 We take the **same base model** and make it a **specialist** — tool definitions baked directly into model weights. No schemas in the prompt. Query in (~10 tokens), JSON tool call out.
 
@@ -25,10 +25,10 @@ We take the **same base model** and make it a **specialist** — tool definition
 ## Features
 
 - **Specialist fine-tune** — tool knowledge baked into weights, not passed in prompts
-- **40x shorter prompts** — ~10 tokens vs ~420 tokens per call
-- **Edge-ready** — 301 MB, runs on phones, laptops, Raspberry Pi, <100ms latency
+- **13x shorter prompts** — 20 tokens vs 264 tokens per call
+- **Edge-ready** — 291 MB, runs on phones, laptops, Raspberry Pi, 142ms avg latency
 - **MCP-native** — calls real MCP servers via standard protocol
-- **Head-to-head benchmark** — provable comparison against FunctionGemma and GPT-4
+- **Head-to-head benchmark** — provable comparison against FunctionGemma, GPT-OSS-120B, and raw Gemma
 - **Zero API cost** — fully local inference, no cloud dependency
 
 ## Tech Stack
@@ -37,7 +37,7 @@ We take the **same base model** and make it a **specialist** — tool definition
 |-----------|------------|
 | Base Model | Gemma 3 270M (`google/gemma-3-270m-pt`) |
 | Fine-tuning | Unsloth (LoRA/QLoRA) |
-| Training Data | Synthetic via Claude API |
+| Training Data | Synthetic via NVIDIA NIM API (llama-3.1-70b-instruct) |
 | Inference | Ollama / llama.cpp |
 | MCP Server | @modelcontextprotocol/server-filesystem |
 | Language | Python 3.12+ |
@@ -67,12 +67,12 @@ graph LR
 
 ```
 FunctionGemma (generalist):
-  Input:  [~400 tokens of schemas] + [query]  = ~420 tokens
+  Input:  [~250 tokens of schemas] + [query]  = ~264 tokens
   Model:  270M params split between parsing schemas + routing intent
   Output: <start_function_call>call:tool{args}<end_function_call>
 
 Ours (specialist):
-  Input:  [query only]  = ~10 tokens
+  Input:  [query only]  = ~20 tokens
   Model:  270M params fully focused on routing intent for known tools
   Output: {"tool": "list_directory", "args": {"path": "src/"}}
 ```
@@ -132,15 +132,31 @@ python demo/cli.py
 
 ## Benchmark
 
-<!-- TODO: Fill with actual results after v0.1 training -->
+360 eval examples, deterministic (temp=0), each model tested in its native interface. See [`docs/benchmark-methodology.md`](docs/benchmark-methodology.md) for full methodology and fairness analysis.
 
-| Model | Tool Acc | Arg Acc | Prompt Tokens | Latency |
-|-------|----------|---------|---------------|---------|
-| Gemma 3 270M (raw) | ~10% | ~5% | 10 | <50ms |
-| FunctionGemma (base) | ~58% | ~40% | 420 | ~200ms |
-| FunctionGemma (fine-tuned) | ~85% | ~70% | 420 | ~200ms |
-| **Ours (specialist)** | **TBD** | **TBD** | **10** | **<100ms** |
-| GPT-4 (ceiling) | ~95% | ~90% | 420 | ~2000ms |
+| Model | Tool Acc | Args Acc | Combined | Avg Prompt Tokens | Avg Latency |
+|-------|----------|----------|----------|-------------------|-------------|
+| **Ours (specialist, 270M)** | **99.2%** | **90.8%** | **90.8%** | **20** | **142ms** |
+| GPT-OSS 120B (NIM API, ceiling) | 76.4% | 23.6% | 23.3% | 246 | 817ms |
+| FunctionGemma 270M (Ollama tools API) | 38.1% | 20.3% | 18.1% | 264 | 146ms |
+| Raw Gemma 3 270M (few-shot prompt) | 42.2% | 25.3% | 13.3% | 269 | 452ms |
+
+### Per-Tool Breakdown (specialist)
+
+| Tool | Count | Tool Acc | Args Acc | Combined |
+|------|-------|----------|----------|----------|
+| list_directory | 104 | 99.0% | 93.3% | 93.3% |
+| read_file | 125 | 99.2% | 96.0% | 96.0% |
+| search_files | 131 | 99.2% | 84.0% | 84.0% |
+
+### Prompt Efficiency
+
+- **Specialist**: 20 tokens/request (tools baked into weights)
+- **GPT-OSS 120B**: 246 tokens/request (12x more)
+- **FunctionGemma**: 264 tokens/request (13x more)
+- **Raw Gemma 3**: 269 tokens/request (14x more)
+
+Full results: [`results/benchmark.json`](results/benchmark.json) | [`results/report.html`](results/report.html) | [`docs/benchmark-methodology.md`](docs/benchmark-methodology.md)
 
 ## Project Structure
 
@@ -163,7 +179,8 @@ edge-mcp-caller/
 ├── demo/
 │   └── cli.py                     # Interactive CLI demo
 ├── docs/
-│   └── training-lessons.md        # Training troubleshooting guide
+│   ├── training-lessons.md        # Training troubleshooting guide
+│   └── benchmark-methodology.md   # Benchmark fairness & methodology
 ├── models/                        # Adapters + GGUF (gitignored)
 └── results/
     ├── benchmark.json             # Raw benchmark numbers
