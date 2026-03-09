@@ -96,11 +96,11 @@ def main() -> None:
     )
     console.print(f"   Merged model saved: {MERGED_DIR}\n")
 
-    # 3. Fix tokenizer and vocab (Unsloth merge drops tokenizer.model)
+    # 3. Fix tokenizer and vocab (Unsloth merge drops tokenizer.model + added_tokens_decoder)
     console.print("[bold]3. Restoring original tokenizer files...[/bold]")
-    for fname in ["tokenizer.model", "special_tokens_map.json", "added_tokens.json"]:
+    for fname in ["tokenizer.model", "tokenizer_config.json", "special_tokens_map.json", "added_tokens.json"]:
         hf_hub_download(BASE_MODEL, fname, local_dir=str(MERGED_DIR))
-    console.print("   Downloaded tokenizer.model + special_tokens_map.json\n")
+    console.print("   Downloaded tokenizer.model + tokenizer_config.json + special_tokens_map.json\n")
 
     # Fix vocab size mismatch: tokenizer has 262145 tokens, embedding has 262144
     console.print("[bold]4. Fixing vocab size mismatch...[/bold]")
