@@ -140,11 +140,20 @@ ollama show gemma3:270m --modelfile
 # A bare `FROM file.gguf` produces garbage output
 ```
 
+### CRITICAL: Unsloth Strips `added_tokens_decoder`
+Unsloth's `save_pretrained_merged()` drops `added_tokens_decoder` from `tokenizer_config.json`. The GGUF converter uses this section to mark `<start_of_turn>` (105) and `<end_of_turn>` (106) as special tokens (USER_DEFINED type). Without it, they get type UNKNOWN, and Ollama tokenizes them as character sequences instead of single tokens — the model can't understand its prompts.
+
+**Fix**: Always restore the base model's `tokenizer_config.json` to the merged directory:
+```python
+hf_hub_download(BASE_MODEL, "tokenizer_config.json", local_dir=str(MERGED_DIR))
+```
+
 ### Symptom → Diagnosis
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | Garbage output | Missing chat template | Copy TEMPLATE block from base model |
 | Infinite generation | Missing stop tokens | Copy PARAMETER stop blocks |
+| Empty response + ~7 eval tokens | Missing `added_tokens_decoder` in tokenizer_config.json | Restore base model's tokenizer_config.json before GGUF conversion |
 | `loras are not yet implemented` | Ollama runtime LoRA unsupported | Use full merge approach |
 
 ## Token Policy

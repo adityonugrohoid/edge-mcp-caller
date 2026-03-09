@@ -33,7 +33,7 @@ Expand tool set to include write operations. Prove read vs write intent disambig
 - [x] Build `data/merge_dataset.py` — merge all `data/generated/` → train/eval split with dedup + validation (11 checks)
 - [x] Tag eval examples by category for robustness breakdown reporting
 - [x] Update `eval/benchmark.py` for 5 tools + per-category accuracy reporting
-- [ ] Retrain specialist on 5-tool dataset (8255 train examples)
+- [x] Retrain specialist on 5-tool dataset (8255 train examples)
 - [ ] Benchmark: overall accuracy + per-category breakdown (clean / messy / disambiguation)
 - [ ] Prove: model handles read vs write intent disambiguation AND noisy real-world queries
 
@@ -73,6 +73,7 @@ Drop-in local MCP tool caller, packaged for distribution.
 - [ ] Benchmark on BFCL leaderboard
 
 ## Version History
+- 2026-03-09: v0.2 training complete — fresh retrain on 8255 examples (5 tools), 1548 steps, 2h 10m; GGUF tokenizer fix (Unsloth strips added_tokens_decoder); 7/7 sanity tests pass
 - 2026-03-09: v0.2 data generation complete — 9174 examples (5 tools, 3 categories), 14 agent runs, 0 invalid
 - 2026-03-09: v0.2 pipeline infra — merge_dataset.py, updated benchmark.py for per-category reporting, tool schemas for write_file/create_directory
 - 2026-03-09: Step 5 complete — MCP client bridge + interactive CLI demo, v0.1 MVP complete
