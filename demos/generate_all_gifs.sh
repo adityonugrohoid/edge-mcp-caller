@@ -72,7 +72,7 @@ record_tool() {
     echo "  Recording $num $tool..."
     asciinema rec "$cast_file" \
         --cols 100 --rows 35 --overwrite \
-        -c "source $VENV && python $RUN_TOOL --tool $tool" \
+        -c "bash -c '. $VENV && python $RUN_TOOL --tool $tool'" \
         2>/dev/null
 
     echo "  Converting to GIF..."
