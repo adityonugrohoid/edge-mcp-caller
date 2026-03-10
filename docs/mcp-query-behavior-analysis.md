@@ -2,7 +2,7 @@
 
 ## Context
 
-v0.2 benchmark showed 95.3% tool routing but only 48.6% args exact-match. Root cause analysis revealed the synthetic training data violates how MCP queries actually work in deployment. This document defines rules for all future data generation.
+An early benchmark showed 95.3% tool routing but only 48.6% args exact-match. Root cause analysis revealed the synthetic training data violated how MCP queries actually work in deployment — the data generator invented arbitrary paths and long code content instead of using extractable arguments. This document captures the failure analysis that motivated the extraction-only rules in `docs/generation-standard.md`.
 
 ## How MCP Filesystem Queries Actually Work
 
@@ -13,7 +13,7 @@ User says something → Specialist extracts tool + args → MCP server executes
 ```
 
 The specialist is a **router and extractor**, not a generator. It:
-1. **Routes** the query to the correct tool (list_directory, read_file, search_files, write_file, create_directory)
+1. **Routes** the query to the correct tool (one of 14 tools across filesystem + git)
 2. **Extracts** arguments from what the user said
 3. Does NOT invent, guess, or hallucinate arguments
 
@@ -180,7 +180,7 @@ The adversarial dimension is tool routing confusion. The path should still be ob
 
 ---
 
-## v0.2 Failure Breakdown
+## Failure Breakdown (from early dataset)
 
 | Failure type | Count | % | Root cause | Fix |
 |-------------|-------|---|-----------|-----|

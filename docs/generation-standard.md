@@ -1,6 +1,6 @@
 # Generation Standard — All 14 Tools
 
-Unified data generation rules for the edge MCP caller specialist model. Supersedes v0.2 ad-hoc generation. See `docs/mcp-query-behavior-analysis.md` for the v0.2 failure analysis that motivated these rules.
+Data generation rules for the edge MCP caller specialist model. See `docs/mcp-query-behavior-analysis.md` for the failure analysis that motivated these extraction-only rules.
 
 ---
 
@@ -288,8 +288,8 @@ Train ONE model on all 14 tools, then benchmark subsets:
 
 | Eval subset | Tools | What it tests |
 |-------------|-------|---------------|
-| 3-tool | list_directory, read_file, search_files | Baseline (v0.1 equivalent) |
-| 5-tool | + write_file, create_directory | Read/write disambiguation (v0.2 equivalent) |
+| 3-tool | list_directory, read_file, search_files | Baseline read operations |
+| 5-tool | + write_file, create_directory | Read/write disambiguation |
 | 8-tool | + edit_file, move_file, directory_tree | Similar-tool disambiguation |
 | 14-tool | + 6 git tools | Cross-server routing |
 

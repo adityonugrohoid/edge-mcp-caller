@@ -98,7 +98,7 @@ def detect_category(filename: str) -> str:
     if "_disambiguation_" in name:
         return "disambiguation"
     if "_adversarial_" in name:
-        return "adversarial"  # v0.2 legacy
+        return "adversarial"  # legacy naming, maps to disambiguation
 
     # Test files from trial runs → clean
     if name.startswith("test_"):
