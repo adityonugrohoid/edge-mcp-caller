@@ -30,7 +30,14 @@ EVAL_FILE = PROJECT_ROOT / "data" / "eval.jsonl"
 
 EVAL_RATIO = 0.10  # 90/10 split
 
-VALID_TOOLS = {"list_directory", "read_file", "search_files", "write_file", "create_directory"}
+VALID_TOOLS = {
+    # Filesystem (8)
+    "list_directory", "read_file", "search_files", "write_file",
+    "create_directory", "edit_file", "move_file", "directory_tree",
+    # Git (6)
+    "git_status", "git_diff_staged", "git_commit",
+    "git_log", "git_branch", "git_create_branch",
+}
 
 TOOL_REQUIRED_ARGS: dict[str, list[str]] = {
     "list_directory": ["path"],
@@ -38,7 +45,25 @@ TOOL_REQUIRED_ARGS: dict[str, list[str]] = {
     "search_files": ["path", "pattern"],
     "write_file": ["path", "content"],
     "create_directory": ["path"],
+    "edit_file": ["path", "old_text", "new_text"],
+    "move_file": ["source", "destination"],
+    "directory_tree": ["path"],
+    "git_status": [],
+    "git_diff_staged": [],
+    "git_commit": ["message"],
+    "git_log": [],
+    "git_branch": [],
+    "git_create_branch": ["branch_name"],
 }
+
+# Tools where path arg must end with /
+DIR_PATH_TOOLS = {"list_directory", "create_directory", "directory_tree"}
+
+# Tools where path arg must NOT end with /
+FILE_PATH_TOOLS = {"read_file", "write_file", "edit_file"}
+
+# Git tools with no args (empty args dict expected)
+GIT_NO_ARGS_TOOLS = {"git_status", "git_diff_staged", "git_branch"}
 
 # File extensions that indicate a file, not a directory
 FILE_EXTENSIONS = re.compile(
@@ -70,8 +95,10 @@ def detect_category(filename: str) -> str:
         return "clean"
     if "_messy_" in name:
         return "messy"
+    if "_disambiguation_" in name:
+        return "disambiguation"
     if "_adversarial_" in name:
-        return "adversarial"
+        return "adversarial"  # v0.2 legacy
 
     # Test files from trial runs → clean
     if name.startswith("test_"):
@@ -125,31 +152,73 @@ def validate_example(ex: dict, source_file: str = "") -> tuple[bool, str]:
         if arg not in args:
             return False, f"missing required arg '{arg}' for {tool}"
 
-    # 7. All arg values are strings
+    # 7. Arg type checks — most are strings, but git_log.max_count is int
     for k, v in args.items():
-        if not isinstance(v, str):
-            return False, f"arg '{k}' is {type(v).__name__}, expected string"
+        if tool == "git_log" and k == "max_count":
+            if not isinstance(v, int):
+                return False, f"git_log max_count is {type(v).__name__}, expected int"
+            if v < 1:
+                return False, f"git_log max_count is {v}, expected positive int"
+        else:
+            if not isinstance(v, str):
+                return False, f"arg '{k}' is {type(v).__name__}, expected string"
 
-    # 8. No trailing slash on file paths (list_directory and create_directory are ok)
+    # 8. Directory path tools must end with /
     path_val = args.get("path", "")
-    if tool in ("read_file", "write_file") and path_val.endswith("/"):
+    if tool in DIR_PATH_TOOLS and path_val and not path_val.endswith("/"):
+        return False, f"{tool} path missing trailing slash: {path_val}"
+
+    # 9. File path tools must NOT end with /
+    if tool in FILE_PATH_TOOLS and path_val and path_val.endswith("/"):
         return False, f"trailing slash on {tool} path: {path_val}"
 
-    # 9. search_files pattern should not be just "*"
+    # 10. No leading / or ./ on paths
+    for path_key in ("path", "source", "destination"):
+        p = args.get(path_key, "")
+        if p and (p.startswith("/") or p.startswith("./")):
+            return False, f"{path_key} has leading '/' or './': {p}"
+
+    # 11. search_files pattern should not be just "*"
     if tool == "search_files":
         pattern = args.get("pattern", "")
         if pattern == "*":
             return False, "search_files pattern is bare '*' (should use list_directory)"
 
-    # 10. create_directory path should end with /
-    if tool == "create_directory" and not path_val.endswith("/"):
-        return False, f"create_directory path missing trailing slash: {path_val}"
-
-    # 11. write_file content should be non-empty
+    # 12. write_file content should be non-empty
     if tool == "write_file":
         content = args.get("content", "")
         if not content.strip():
             return False, "write_file content is empty"
+
+    # 13. edit_file: old_text and new_text must differ
+    if tool == "edit_file":
+        old_text = args.get("old_text", "")
+        new_text = args.get("new_text", "")
+        if not old_text.strip():
+            return False, "edit_file old_text is empty"
+        if not new_text.strip():
+            return False, "edit_file new_text is empty"
+        if old_text == new_text:
+            return False, "edit_file old_text == new_text (no-op edit)"
+
+    # 14. move_file: source != destination
+    if tool == "move_file":
+        source = args.get("source", "")
+        destination = args.get("destination", "")
+        if source == destination:
+            return False, "move_file source == destination"
+
+    # 15. git_commit message non-empty
+    if tool == "git_commit":
+        message = args.get("message", "")
+        if not message.strip():
+            return False, "git_commit message is empty"
+
+    # 16. git_create_branch branch_name non-empty
+    if tool == "git_create_branch":
+        branch_name = args.get("branch_name", "")
+        if not branch_name.strip():
+            return False, "git_create_branch branch_name is empty"
 
     return True, ""
 
@@ -302,11 +371,11 @@ def print_summary(
     table.add_column("Tool", style="cyan")
     table.add_column("Clean", justify="right")
     table.add_column("Messy", justify="right")
-    table.add_column("Adversarial", justify="right")
+    table.add_column("Disambiguation", justify="right")
     table.add_column("Total", justify="right", style="bold")
 
     all_tools = sorted(VALID_TOOLS)
-    categories = ["clean", "messy", "adversarial"]
+    categories = ["clean", "messy", "disambiguation"]
     grand_total = 0
     cat_totals = defaultdict(int)
 
@@ -408,30 +477,37 @@ def main() -> None:
     # Summary
     print_summary(valid, invalid_count, n_train, n_eval)
 
-    # write_file round-trip JSON parse test
-    write_file_count = 0
-    write_file_parse_ok = 0
+    # Round-trip JSON parse tests for tools with complex content args
+    round_trip_tools = {
+        "write_file": lambda a: isinstance(a.get("content"), str) and len(a["content"].strip()) > 0,
+        "edit_file": lambda a: (
+            isinstance(a.get("old_text"), str) and isinstance(a.get("new_text"), str)
+            and a["old_text"] != a["new_text"]
+        ),
+        "git_commit": lambda a: isinstance(a.get("message"), str) and len(a["message"].strip()) > 0,
+    }
+
+    rt_counts: dict[str, list[int]] = {t: [0, 0] for t in round_trip_tools}  # [total, passed]
     for ex, _ in valid:
         tool_call = json.loads(ex["messages"][1]["content"])
-        if tool_call["tool"] == "write_file":
-            write_file_count += 1
+        tool = tool_call["tool"]
+        if tool in round_trip_tools:
+            rt_counts[tool][0] += 1
             try:
-                # Verify the full line round-trips through JSON
                 line = json.dumps(ex, ensure_ascii=False)
                 reparsed = json.loads(line)
                 inner = json.loads(reparsed["messages"][1]["content"])
-                assert inner["tool"] == "write_file"
-                assert isinstance(inner["args"]["content"], str)
-                assert len(inner["args"]["content"].strip()) > 0
-                write_file_parse_ok += 1
+                assert inner["tool"] == tool
+                assert round_trip_tools[tool](inner["args"])
+                rt_counts[tool][1] += 1
             except (json.JSONDecodeError, AssertionError, KeyError):
                 pass
 
-    if write_file_count > 0:
-        console.print(
-            f"\n[bold]write_file round-trip test:[/bold] "
-            f"{write_file_parse_ok}/{write_file_count} passed"
-        )
+    console.print(f"\n[bold]Round-trip JSON tests:[/bold]")
+    for tool, (total, passed) in sorted(rt_counts.items()):
+        if total > 0:
+            status = "[green]PASS[/green]" if passed == total else "[red]FAIL[/red]"
+            console.print(f"  {tool}: {passed}/{total} {status}")
 
 
 if __name__ == "__main__":

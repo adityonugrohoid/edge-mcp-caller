@@ -33,6 +33,7 @@ data/eval.jsonl
 # Archive (tracked — baseline datasets for comparison)
 !data/archive/
 data/archive/v02_generated/
+data/archive/v03_generated/
 
 # Results (regenerated)
 results/
