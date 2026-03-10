@@ -12,6 +12,11 @@
 
 </div>
 
+<div align="center">
+<img src="demos/e2e-results.svg" alt="14/14 tools pass end-to-end" width="700">
+<br><i>Full end-to-end: natural language query → 270M model → MCP server → real result. All 14 tools pass.</i>
+</div>
+
 ---
 
 ## The Thesis
