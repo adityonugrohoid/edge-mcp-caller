@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-"""Interactive CLI demo — end-to-end specialist model → MCP filesystem server.
+"""Interactive CLI demo — end-to-end specialist model → MCP servers (filesystem + git).
 
 User query → Ollama (edge-mcp-caller) → JSON parse → MCP tools/call → result.
 
 Usage:
     python demo/cli.py                        # interactive mode, current directory
     python demo/cli.py /path/to/explore       # interactive, specify target directory
+    python demo/cli.py --repo /path/to/repo   # enable git tools for a repo
     python demo/cli.py -n 10                  # batch mode: run 10 eval examples
-    python demo/cli.py -n 360                 # batch mode: full eval set (360)
     python demo/cli.py -n 5 --verbose         # batch mode with per-query detail
-    python demo/cli.py -n 360 /path/to/dir    # batch mode with custom allowed dir
 """
 
 import argparse
 import asyncio
 import importlib.util
 import json
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -39,6 +39,7 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 MCPClientBridge = _mod.MCPClientBridge
 parse_model_output = _mod.parse_model_output
+GIT_TOOLS = _mod.GIT_TOOLS
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -49,6 +50,26 @@ MODEL_NAME = "edge-mcp-caller:latest"
 EVAL_FILE = PROJECT_ROOT / "data" / "eval.jsonl"
 
 console = Console()
+
+
+# ---------------------------------------------------------------------------
+# Git repo auto-detection
+# ---------------------------------------------------------------------------
+
+
+def detect_git_repo(dirs: list[str]) -> str | None:
+    """Try to find a git repo root from the given directories."""
+    for d in dirs:
+        try:
+            result = subprocess.run(
+                ["git", "-C", d, "rev-parse", "--show-toplevel"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            continue
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -147,16 +168,24 @@ async def call_model(client: httpx.AsyncClient, query: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def show_banner(allowed_dirs: list[str]) -> None:
+def show_banner(allowed_dirs: list[str], repo_path: str | None) -> None:
     """Show startup banner."""
     dirs_text = ", ".join(allowed_dirs)
     banner = Text()
     banner.append("Edge MCP Caller", style="bold magenta")
-    banner.append(" — specialist 270M model + MCP filesystem server\n\n")
+    banner.append(" — specialist 270M model + MCP servers\n\n")
     banner.append("Model: ", style="dim")
     banner.append(f"{MODEL_NAME}\n")
-    banner.append("Allowed dirs: ", style="dim")
-    banner.append(f"{dirs_text}\n\n")
+
+    # Servers
+    servers = []
+    if allowed_dirs:
+        servers.append(f"filesystem ({dirs_text})")
+    if repo_path:
+        servers.append(f"git ({repo_path})")
+    banner.append("Servers: ", style="dim")
+    banner.append(", ".join(servers) + "\n\n")
+
     banner.append("Commands:\n", style="dim")
     banner.append("  tools   ", style="cyan")
     banner.append("— list available MCP tools\n")
@@ -164,7 +193,7 @@ def show_banner(allowed_dirs: list[str]) -> None:
     banner.append("— show this help\n")
     banner.append("  quit    ", style="cyan")
     banner.append("— exit\n")
-    banner.append("\nOr just ask a question about your filesystem.")
+    banner.append("\nAsk about your filesystem or git repository.")
     console.print(Panel(banner, border_style="blue"))
 
 
@@ -212,18 +241,26 @@ def show_model_step(result: dict) -> None:
     console.print(metrics)
 
 
-def show_mcp_step(tool: str, args: dict, result_text: str | None, error: str | None, latency_ms: float) -> None:
+def show_mcp_step(
+    tool: str, args: dict, server: str,
+    result_text: str | None, error: str | None, latency_ms: float,
+) -> None:
     """Display the MCP tool execution step with full detail."""
-    # 4. MCP request
-    mcp_request = json.dumps({"method": "tools/call", "params": {"name": tool, "arguments": args}}, indent=2)
+    server_label = f"@modelcontextprotocol/server-{server}"
+
+    # 3. MCP request
+    mcp_request = json.dumps(
+        {"method": "tools/call", "params": {"name": tool, "arguments": args}},
+        indent=2,
+    )
     console.print(Panel(
         mcp_request,
         title="[bold]3. MCP Request[/bold]",
-        subtitle="stdio → @modelcontextprotocol/server-filesystem",
+        subtitle=f"stdio → {server_label}",
         border_style="yellow",
     ))
 
-    # 5. MCP response
+    # 4. MCP response
     if error:
         console.print(Panel(
             f"[red]{error}[/red]",
@@ -244,10 +281,11 @@ def show_mcp_step(tool: str, args: dict, result_text: str | None, error: str | N
             border_style="green",
         ))
 
-    # 6. MCP metrics
+    # 5. MCP metrics
     metrics = Table(title="MCP Metrics", border_style="dim", show_header=False)
     metrics.add_column("Metric", style="dim")
     metrics.add_column("Value", style="bold")
+    metrics.add_row("Server", server_label)
     metrics.add_row("Tool called", tool)
     metrics.add_row("Execution latency", f"{latency_ms:.0f}ms")
     result_len = len(result_text) if result_text else 0
@@ -255,7 +293,7 @@ def show_mcp_step(tool: str, args: dict, result_text: str | None, error: str | N
     console.print(metrics)
 
 
-def show_summary(model_result: dict, mcp_latency_ms: float) -> None:
+def show_summary(model_result: dict, mcp_latency_ms: float, server: str) -> None:
     """Display end-to-end summary."""
     total_ms = model_result["latency_ms"] + mcp_latency_ms
     table = Table(title="End-to-End Summary", border_style="magenta")
@@ -268,7 +306,7 @@ def show_summary(model_result: dict, mcp_latency_ms: float) -> None:
         f'{model_result["latency_ms"]:.0f}ms',
     )
     table.add_row(
-        "MCP execution",
+        f"MCP execution ({server})",
         f'{model_result["tool"]}({json.dumps(model_result["args"])})',
         f"{mcp_latency_ms:.0f}ms",
     )
@@ -280,9 +318,10 @@ def show_tools(tools: list[dict]) -> None:
     """Display available MCP tools as a table."""
     table = Table(title="Available MCP Tools", border_style="blue")
     table.add_column("Tool", style="cyan")
+    table.add_column("Server", style="dim")
     table.add_column("Description")
     for t in tools:
-        table.add_row(t["name"], t["description"])
+        table.add_row(t["name"], t.get("server", ""), t["description"])
     console.print(table)
 
 
@@ -311,7 +350,7 @@ async def run_pipeline(
             "prompt_tokens": int, "eval_tokens": int,
             "model_latency_ms": float, "mcp_latency_ms": float,
             "mcp_result": str|None, "mcp_error": str|None,
-            "model_error": str|None,
+            "model_error": str|None, "server": str|None,
         }
     """
     if verbose:
@@ -336,7 +375,11 @@ async def run_pipeline(
             "mcp_result": None,
             "mcp_error": None,
             "model_error": model_result["error"],
+            "server": None,
         }
+
+    # Determine server
+    server = bridge.server_for_tool(model_result["tool"])
 
     # MCP execution
     mcp_latency_ms = 0.0
@@ -354,10 +397,10 @@ async def run_pipeline(
 
     if verbose:
         show_mcp_step(
-            model_result["tool"], model_result["args"],
+            model_result["tool"], model_result["args"], server,
             mcp_result_text, mcp_error, mcp_latency_ms,
         )
-        show_summary(model_result, mcp_latency_ms)
+        show_summary(model_result, mcp_latency_ms, server)
         console.print("[bold]=== Pipeline End ===[/bold]")
 
     return {
@@ -372,6 +415,7 @@ async def run_pipeline(
         "mcp_result": mcp_result_text,
         "mcp_error": mcp_error,
         "model_error": None,
+        "server": server,
     }
 
 
@@ -380,13 +424,23 @@ async def run_pipeline(
 # ---------------------------------------------------------------------------
 
 
-async def run_batch(allowed_dirs: list[str], n: int, verbose: bool) -> None:
+async def run_batch(
+    allowed_dirs: list[str], repo_path: str | None, n: int, verbose: bool,
+) -> None:
     """Run n eval examples through the full pipeline."""
+    servers = []
+    if allowed_dirs:
+        servers.append("filesystem")
+    if repo_path:
+        servers.append("git")
+
     console.print(Panel(
         f"[bold magenta]Batch Mode[/bold magenta] — {n} eval queries through full pipeline\n"
         f"Model: {MODEL_NAME}\n"
         f"Eval file: {EVAL_FILE}\n"
+        f"Servers: {', '.join(servers)}\n"
         f"Allowed dirs: {', '.join(allowed_dirs)}\n"
+        f"Repo path: {repo_path or '(none)'}\n"
         f"Verbose: {verbose}",
         border_style="blue",
     ))
@@ -398,12 +452,12 @@ async def run_batch(allowed_dirs: list[str], n: int, verbose: bool) -> None:
         console.print(f"[yellow]Warning:[/yellow] eval set has {actual_n} examples (requested {n})")
 
     # Connect MCP
-    console.print("[dim]Starting MCP filesystem server...[/dim]")
-    bridge = MCPClientBridge(allowed_dirs)
+    console.print("[dim]Starting MCP servers...[/dim]")
+    bridge = MCPClientBridge(allowed_dirs=allowed_dirs, repo_path=repo_path)
     try:
         await bridge.connect()
     except Exception as e:
-        console.print(f"[red]Failed to start MCP server:[/red] {e}")
+        console.print(f"[red]Failed to start MCP servers:[/red] {e}")
         return
 
     tools = await bridge.list_tools()
@@ -562,6 +616,7 @@ async def run_batch(allowed_dirs: list[str], n: int, verbose: bool) -> None:
             "model": MODEL_NAME,
             "num_queries": actual_n,
             "allowed_dirs": allowed_dirs,
+            "repo_path": repo_path,
             "total_time_s": round(total_time / 1000, 2),
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         },
@@ -595,7 +650,7 @@ async def run_batch(allowed_dirs: list[str], n: int, verbose: bool) -> None:
         json.dump(save_data, f, indent=2, default=str)
     console.print(f"\n[green]Raw results saved:[/green] {output_file}")
 
-    console.print(f"[dim]MCP server stopped.[/dim]")
+    console.print(f"[dim]MCP servers stopped.[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -603,17 +658,23 @@ async def run_batch(allowed_dirs: list[str], n: int, verbose: bool) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def run_interactive(allowed_dirs: list[str]) -> None:
+async def run_interactive(allowed_dirs: list[str], repo_path: str | None) -> None:
     """Main interactive loop."""
-    show_banner(allowed_dirs)
+    show_banner(allowed_dirs, repo_path)
 
-    # Connect to MCP server
-    console.print("[dim]Starting MCP filesystem server...[/dim]")
-    bridge = MCPClientBridge(allowed_dirs)
+    # Connect to MCP servers
+    servers = []
+    if allowed_dirs:
+        servers.append("filesystem")
+    if repo_path:
+        servers.append("git")
+    console.print(f"[dim]Starting MCP servers ({', '.join(servers)})...[/dim]")
+
+    bridge = MCPClientBridge(allowed_dirs=allowed_dirs, repo_path=repo_path)
     try:
         await bridge.connect()
     except Exception as e:
-        console.print(f"[red]Failed to start MCP server:[/red] {e}")
+        console.print(f"[red]Failed to start MCP servers:[/red] {e}")
         console.print("[dim]Make sure Node.js 18+ is installed (npx must be available)[/dim]")
         return
 
@@ -654,13 +715,13 @@ async def run_interactive(allowed_dirs: list[str]) -> None:
                 show_tools(tools)
                 continue
             elif cmd == "help":
-                show_banner(allowed_dirs)
+                show_banner(allowed_dirs, repo_path)
                 continue
 
             await run_pipeline(http, bridge, query, verbose=True)
 
     await bridge.close()
-    console.print("[dim]MCP server stopped.[/dim]")
+    console.print("[dim]MCP servers stopped.[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -671,21 +732,29 @@ async def run_interactive(allowed_dirs: list[str]) -> None:
 def main() -> None:
     """Entry point."""
     parser = argparse.ArgumentParser(
-        description="Edge MCP Caller — specialist 270M model + MCP filesystem server",
+        description="Edge MCP Caller — specialist 270M model + MCP servers (filesystem + git)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  python demo/cli.py                   # interactive mode\n"
-            "  python demo/cli.py -n 10             # batch: 10 eval queries\n"
-            "  python demo/cli.py -n 360            # batch: full eval set\n"
-            "  python demo/cli.py -n 5 --verbose    # batch with per-query detail\n"
-            "  python demo/cli.py /path/to/dir      # interactive with custom dir\n"
-            "  python demo/cli.py -n 360 /tmp/test  # batch with custom allowed dir\n"
+            "  python demo/cli.py                          # interactive, auto-detect git\n"
+            "  python demo/cli.py /path/to/dir             # interactive with custom dir\n"
+            "  python demo/cli.py --repo /path/to/repo     # explicit git repo path\n"
+            "  python demo/cli.py --no-git                 # filesystem only, skip git\n"
+            "  python demo/cli.py -n 10                    # batch: 10 eval queries\n"
+            "  python demo/cli.py -n 5 --verbose           # batch with per-query detail\n"
         ),
     )
     parser.add_argument(
         "dirs", nargs="*", default=[],
         help="Allowed directories for MCP filesystem server (default: current directory)",
+    )
+    parser.add_argument(
+        "--repo", default=None,
+        help="Git repository path for MCP git server (default: auto-detect from dirs)",
+    )
+    parser.add_argument(
+        "--no-git", action="store_true",
+        help="Disable git server (filesystem only)",
     )
     parser.add_argument(
         "-n", "--num-runs", type=int, default=0,
@@ -705,10 +774,25 @@ def main() -> None:
             console.print(f"[red]Error:[/red] '{d}' is not a directory")
             sys.exit(1)
 
-    if args.num_runs > 0:
-        asyncio.run(run_batch(allowed_dirs, args.num_runs, args.verbose))
+    # Resolve git repo path
+    repo_path: str | None = None
+    if args.no_git:
+        repo_path = None
+    elif args.repo:
+        repo_path = str(Path(args.repo).resolve())
+        if not Path(repo_path).is_dir():
+            console.print(f"[red]Error:[/red] repo path '{repo_path}' is not a directory")
+            sys.exit(1)
     else:
-        asyncio.run(run_interactive(allowed_dirs))
+        # Auto-detect git repo from allowed dirs
+        repo_path = detect_git_repo(allowed_dirs)
+        if repo_path:
+            console.print(f"[dim]Auto-detected git repo: {repo_path}[/dim]")
+
+    if args.num_runs > 0:
+        asyncio.run(run_batch(allowed_dirs, repo_path, args.num_runs, args.verbose))
+    else:
+        asyncio.run(run_interactive(allowed_dirs, repo_path))
 
 
 if __name__ == "__main__":

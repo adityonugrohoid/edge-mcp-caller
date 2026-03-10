@@ -130,7 +130,8 @@ Full per-tool and per-category breakdowns in [`docs/benchmark-scaling-results.md
 - Python 3.12+
 - NVIDIA GPU with 8GB+ VRAM (for training) or free Google Colab
 - Ollama (for inference)
-- Node.js 18+ (for MCP servers)
+- Node.js 18+ (for filesystem MCP server)
+- uv / uvx (for git MCP server)
 
 ### Installation
 
@@ -160,9 +161,11 @@ python eval/benchmark.py                    # 14-tool, 30/tool
 python eval/benchmark.py --subset 3         # 3-tool subset
 python eval/benchmark.py --subset all       # full scaling curve
 
-# Step 5: Interactive demo (query → model → MCP server → result)
-python demo/cli.py                          # interactive mode
+# Step 5: Interactive demo (query → model → MCP servers → result)
+python demo/cli.py                          # interactive, auto-detect git
 python demo/cli.py /path/to/dir             # specify allowed directory
+python demo/cli.py --repo /path/to/repo     # explicit git repo path
+python demo/cli.py --no-git                 # filesystem only
 python demo/cli.py -n 10                    # batch mode
 python demo/cli.py -n 5 --verbose           # batch with detail
 ```
@@ -175,7 +178,7 @@ python demo/cli.py -n 5 --verbose           # batch with detail
 | Fine-tuning | Unsloth (LoRA r=128, BF16) |
 | Training Data | Claude Code agents (Sonnet 4.6), extraction-only rules |
 | Inference | Ollama (Q8_0 GGUF, 291 MB) |
-| MCP Servers | @modelcontextprotocol/server-filesystem, @modelcontextprotocol/server-git |
+| MCP Servers | @modelcontextprotocol/server-filesystem (npx), mcp-server-git (uvx) |
 | Language | Python 3.12+ |
 | Hardware | RTX 4060 Laptop (8GB VRAM) — single consumer GPU |
 

@@ -12,8 +12,8 @@ Proved that a 270M specialist model (tools baked in weights) beats generalist fu
 - [x] Fine-tune Gemma 3 270M with LoRA r=128 (BF16, 3 epochs, ~2h on RTX 4060)
 - [x] Merge adapter + convert to Q8_0 GGUF (291 MB) for Ollama
 - [x] Scaling benchmark: 4 models × 4 subsets (3/5/8/14 tools)
-- [x] MCP client bridge (JSON → MCP tools/call, 14 tools, 2 servers)
-- [x] Interactive CLI demo with batch mode
+- [x] MCP client bridge (JSON → MCP tools/call, 14 tools, 2 servers, arg translation)
+- [x] Interactive CLI demo with batch mode and dual-server support
 
 **Result**: 99.5% combined accuracy at 14 tools, 20 tokens/request, 153ms latency. Beats GPT-OSS 120B (41.7%), FunctionGemma (13.6%), and raw Gemma 3 (11.4%). No scaling wall found — the 270M model handles 14 tools as well as 3. See [`docs/benchmark-scaling-results.md`](docs/benchmark-scaling-results.md).
 

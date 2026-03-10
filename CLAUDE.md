@@ -18,7 +18,7 @@ A 270M model has no business being a generalist. Make it a specialist: bake tool
 - **Fine-tuning**: Unsloth (LoRA r=128, BF16), single consumer GPU
 - **Training data**: Claude Code agents (Sonnet 4.6) orchestrated by Opus 4.6, extraction-only rules
 - **Inference**: Ollama / llama.cpp (Q8_0, 291 MB)
-- **MCP**: Python MCP client SDK + @modelcontextprotocol/server-filesystem + @modelcontextprotocol/server-git
+- **MCP**: Python MCP client SDK + @modelcontextprotocol/server-filesystem (npx) + mcp-server-git (uvx)
 - **CLI output**: rich (tables, progress)
 - **Config**: python-dotenv (.env)
 
@@ -39,9 +39,9 @@ User query (~20 tokens)
     ↓
 Gemma 3 270M (specialist, tools in weights)
     ↓ {"tool": "git_commit", "args": {"message": "fix auth bug"}}
-MCP Client Bridge (JSON → MCP tools/call)
+MCP Client Bridge (JSON → MCP tools/call, arg translation, server routing)
     ↓
-MCP Server (filesystem or git, standard, unchanged)
+MCP Server (filesystem via npx, or git via uvx)
     ↓
 Result to user
 ```
@@ -51,8 +51,8 @@ Result to user
 - `train/finetune.py` — LoRA fine-tuning via Unsloth
 - `train/merge_and_convert.py` — Merge LoRA adapter + convert to GGUF for Ollama
 - `eval/benchmark.py` — Scaling benchmark: 4 models × 4 subsets (3/5/8/14 tools)
-- `mcp/client.py` — Bridge: model JSON output → MCP tools/call protocol (14 tools, 2 servers)
-- `demo/cli.py` — Interactive CLI demo
+- `mcp/client.py` — Bridge: model JSON → MCP tools/call (14 tools, 2 servers, arg translation, server routing)
+- `demo/cli.py` — Interactive CLI demo (dual-server, auto-detect git, batch mode)
 - `tools/filesystem.json` — Filesystem MCP server tool definitions (8 tools, reference only, NOT passed to model)
 - `tools/git.json` — Git MCP server tool definitions (6 tools, reference only)
 - `docs/generation-standard.md` — Data generation standard for all 14 tools
@@ -89,11 +89,13 @@ python eval/benchmark.py                    # 14-tool, 30/tool
 python eval/benchmark.py --subset 3         # 3-tool subset
 python eval/benchmark.py --subset all       # full scaling curve (3/5/8/14)
 
-# Step 5: Demo
-python demo/cli.py                  # interactive mode, current directory
-python demo/cli.py /path/to/dir     # interactive, specify allowed directory
-python demo/cli.py -n 10            # batch mode: 10 eval examples
-python demo/cli.py -n 5 --verbose   # batch with per-query detail
+# Step 5: Demo (connects filesystem + git MCP servers)
+python demo/cli.py                          # interactive, auto-detect git
+python demo/cli.py /path/to/dir             # interactive with custom dir
+python demo/cli.py --repo /path/to/repo     # explicit git repo path
+python demo/cli.py --no-git                 # filesystem only, skip git
+python demo/cli.py -n 10                    # batch: 10 eval examples
+python demo/cli.py -n 5 --verbose           # batch with per-query detail
 ```
 
 ## Complete Tool Set (14 tools, 2 MCP servers)
@@ -120,7 +122,13 @@ python demo/cli.py -n 5 --verbose   # batch with per-query detail
 | 13 | `git_branch` | _(none)_ |
 | 14 | `git_create_branch` | `branch_name`, `base_branch` _(optional)_ |
 
-**Design decisions**: `edit_file` model output uses simplified `{path, old_text, new_text}` — bridge converts to MCP `{path, edits: [{oldText, newText}]}`. Git tools omit `repo_path` — bridge injects from config. See `docs/generation-standard.md` for full rules.
+**Bridge translations** (`mcp/client.py`):
+- `edit_file`: model outputs `{path, old_text, new_text}` → bridge converts to MCP `{path, edits: [{oldText, newText}]}`
+- Git tools: model omits `repo_path` → bridge injects from config
+- `git_branch`: MCP server requires `branch_type` → bridge defaults to `"local"`
+- Filesystem server: `npx -y @modelcontextprotocol/server-filesystem`
+- Git server: `uvx mcp-server-git --repository <path>`
+- See `docs/generation-standard.md` for full data rules.
 
 ## Training Patterns
 
