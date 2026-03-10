@@ -1,23 +1,27 @@
 #!/usr/bin/env python3
 """Head-to-head benchmark: specialist vs raw Gemma vs FunctionGemma vs GPT-OSS-120B.
 
-Runs all models against the eval set (360 examples) and compares:
-- Tool accuracy (correct tool name)
-- Argument accuracy (correct args, exact match)
-- Combined accuracy (both tool + args correct)
-- Prompt token count (schema-prompting vs specialist)
-- Inference latency (excluding model load time)
+Supports scaling evaluation across tool subsets (3/5/8/14) to find where
+270M accuracy degrades as tool count increases.
 
 Each model is tested in its intended mode:
 - edge-mcp-caller: bare user query, no schema (specialist, tools in weights)
 - gemma3:270m: few-shot system prompt + JSON format (best-effort schema prompting)
 - functiongemma:270m: Ollama tools API with full schemas (designed interface)
 - openai/gpt-oss-120b: NVIDIA NIM API with OpenAI tools format (ceiling reference)
+
+Usage:
+    python eval/benchmark.py                          # 14-tool, 30/tool
+    python eval/benchmark.py --subset 3               # 3-tool subset
+    python eval/benchmark.py --subset 8 --per-tool 50 # 8-tool, 50/tool
+    python eval/benchmark.py --subset all              # run all subsets (scaling curve)
 """
 
+import argparse
 import asyncio
 import json
 import os
+import random
 import time
 from pathlib import Path
 
@@ -33,7 +37,8 @@ from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 EVAL_FILE = PROJECT_ROOT / "data" / "eval.jsonl"
-TOOLS_FILE = PROJECT_ROOT / "tools" / "filesystem.json"
+FS_TOOLS_FILE = PROJECT_ROOT / "tools" / "filesystem.json"
+GIT_TOOLS_FILE = PROJECT_ROOT / "tools" / "git.json"
 RESULTS_DIR = PROJECT_ROOT / "results"
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
@@ -66,52 +71,150 @@ MODELS = {
     },
 }
 
-# All valid tools for per-tool breakdown
-ALL_TOOLS = ["list_directory", "read_file", "search_files", "write_file", "create_directory"]
+# ---------------------------------------------------------------------------
+# Tool subsets for scaling benchmark
+# ---------------------------------------------------------------------------
 
-# System prompt for raw Gemma 3 (few-shot, best-effort)
-RAW_GEMMA_SYSTEM_PROMPT = (
-    "You are a tool router. Given a user query about filesystem operations, "
-    "output a JSON tool call. Output ONLY the JSON object, nothing else.\n\n"
-    "Available tools:\n"
-    "- list_directory(path): list files and directories at a path\n"
-    "- read_file(path): read contents of a file\n"
-    "- search_files(path, pattern): search for files matching a glob pattern\n"
-    "- write_file(path, content): create or overwrite a file with content\n"
-    "- create_directory(path): create a new directory\n\n"
-    "Examples:\n"
-    'User: "show files in docs/" → {"tool":"list_directory","args":{"path":"docs/"}}\n'
-    'User: "read config.yaml" → {"tool":"read_file","args":{"path":"config.yaml"}}\n'
-    'User: "find *.py in lib/" → {"tool":"search_files","args":{"path":"lib/","pattern":"*.py"}}\n'
-    'User: "what\'s in the tests folder" → {"tool":"list_directory","args":{"path":"tests/"}}\n'
-    'User: "show me README.md" → {"tool":"read_file","args":{"path":"README.md"}}\n'
-    'User: "find all .js files in src/" → {"tool":"search_files","args":{"path":"src/","pattern":"*.js"}}\n'
-    'User: "save hello world to output.txt" → {"tool":"write_file","args":{"path":"output.txt","content":"hello world"}}\n'
-    'User: "make a new folder called utils" → {"tool":"create_directory","args":{"path":"utils/"}}'
-)
+SUBSET_3 = ["list_directory", "read_file", "search_files"]
+SUBSET_5 = SUBSET_3 + ["write_file", "create_directory"]
+SUBSET_8 = SUBSET_5 + ["edit_file", "move_file", "directory_tree"]
+SUBSET_14 = SUBSET_8 + [
+    "git_status", "git_diff_staged", "git_commit",
+    "git_log", "git_branch", "git_create_branch",
+]
+
+SUBSETS = {
+    3: SUBSET_3,
+    5: SUBSET_5,
+    8: SUBSET_8,
+    14: SUBSET_14,
+}
+
+# Categories
+CATEGORIES = ["clean", "messy", "disambiguation"]
+
+# Few-shot examples for raw Gemma, keyed by tool
+RAW_GEMMA_FEW_SHOT = {
+    "list_directory": [
+        ('show files in docs/', '{"tool":"list_directory","args":{"path":"docs/"}}'),
+        ('what\'s in the tests folder', '{"tool":"list_directory","args":{"path":"tests/"}}'),
+    ],
+    "read_file": [
+        ('read config.yaml', '{"tool":"read_file","args":{"path":"config.yaml"}}'),
+        ('show me README.md', '{"tool":"read_file","args":{"path":"README.md"}}'),
+    ],
+    "search_files": [
+        ('find *.py in lib/', '{"tool":"search_files","args":{"path":"lib/","pattern":"*.py"}}'),
+        ('find all .js files in src/', '{"tool":"search_files","args":{"path":"src/","pattern":"*.js"}}'),
+    ],
+    "write_file": [
+        ('save hello world to output.txt', '{"tool":"write_file","args":{"path":"output.txt","content":"hello world"}}'),
+        ('write TODO: fix later to notes.txt', '{"tool":"write_file","args":{"path":"notes.txt","content":"TODO: fix later"}}'),
+    ],
+    "create_directory": [
+        ('make a new folder called utils', '{"tool":"create_directory","args":{"path":"utils/"}}'),
+        ('create directory tests/unit/', '{"tool":"create_directory","args":{"path":"tests/unit/"}}'),
+    ],
+    "edit_file": [
+        ('in config.json replace debug=false with debug=true', '{"tool":"edit_file","args":{"path":"config.json","old_text":"debug=false","new_text":"debug=true"}}'),
+        ('change port=3000 to port=8080 in server.conf', '{"tool":"edit_file","args":{"path":"server.conf","old_text":"port=3000","new_text":"port=8080"}}'),
+    ],
+    "move_file": [
+        ('move old.txt to archive/old.txt', '{"tool":"move_file","args":{"source":"old.txt","destination":"archive/old.txt"}}'),
+        ('rename utils.py to helpers.py', '{"tool":"move_file","args":{"source":"utils.py","destination":"helpers.py"}}'),
+    ],
+    "directory_tree": [
+        ('show the full tree of src/', '{"tool":"directory_tree","args":{"path":"src/"}}'),
+        ('tree structure of project/', '{"tool":"directory_tree","args":{"path":"project/"}}'),
+    ],
+    "git_status": [
+        ('check git status', '{"tool":"git_status","args":{}}'),
+        ('any uncommitted changes?', '{"tool":"git_status","args":{}}'),
+    ],
+    "git_diff_staged": [
+        ('show staged changes', '{"tool":"git_diff_staged","args":{}}'),
+        ('what\'s staged for commit', '{"tool":"git_diff_staged","args":{}}'),
+    ],
+    "git_commit": [
+        ('commit with message fix auth bug', '{"tool":"git_commit","args":{"message":"fix auth bug"}}'),
+        ('git commit refactor: clean up utils', '{"tool":"git_commit","args":{"message":"refactor: clean up utils"}}'),
+    ],
+    "git_log": [
+        ('show commit history', '{"tool":"git_log","args":{}}'),
+        ('show last 5 commits', '{"tool":"git_log","args":{"max_count":5}}'),
+    ],
+    "git_branch": [
+        ('list branches', '{"tool":"git_branch","args":{}}'),
+        ('show all branches', '{"tool":"git_branch","args":{}}'),
+    ],
+    "git_create_branch": [
+        ('create branch feature/auth', '{"tool":"git_create_branch","args":{"branch_name":"feature/auth"}}'),
+        ('create branch fix/login from develop', '{"tool":"git_create_branch","args":{"branch_name":"fix/login","base_branch":"develop"}}'),
+    ],
+}
 
 console = Console()
 
 
 # ---------------------------------------------------------------------------
-# Tool schema for FunctionGemma (Ollama tools API format)
+# Tool schema loading
 # ---------------------------------------------------------------------------
 
 
-def load_tools_for_ollama() -> list[dict]:
-    """Convert filesystem.json to Ollama tools API format."""
-    tools_data = json.loads(TOOLS_FILE.read_text())
-    ollama_tools = []
-    for tool in tools_data["tools"]:
-        ollama_tools.append({
-            "type": "function",
-            "function": {
-                "name": tool["name"],
-                "description": tool["description"],
-                "parameters": tool["inputSchema"],
-            },
-        })
-    return ollama_tools
+def load_all_tool_schemas() -> dict[str, dict]:
+    """Load all tool schemas from filesystem.json and git.json, keyed by name."""
+    schemas = {}
+    for tools_file in [FS_TOOLS_FILE, GIT_TOOLS_FILE]:
+        data = json.loads(tools_file.read_text())
+        for tool in data["tools"]:
+            schemas[tool["name"]] = {
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool["description"],
+                    "parameters": tool["inputSchema"],
+                },
+            }
+    return schemas
+
+
+def get_tools_for_subset(all_schemas: dict[str, dict], subset_tools: list[str]) -> list[dict]:
+    """Filter tool schemas to only include tools in the subset."""
+    return [all_schemas[name] for name in subset_tools if name in all_schemas]
+
+
+def build_raw_gemma_prompt(subset_tools: list[str]) -> str:
+    """Build few-shot system prompt for raw Gemma, scoped to subset tools."""
+    tool_descriptions = {
+        "list_directory": "list_directory(path): list files and directories at a path",
+        "read_file": "read_file(path): read contents of a file",
+        "search_files": "search_files(path, pattern): search for files matching a glob pattern",
+        "write_file": "write_file(path, content): create or overwrite a file with content",
+        "create_directory": "create_directory(path): create a new directory",
+        "edit_file": "edit_file(path, old_text, new_text): replace specific text in a file",
+        "move_file": "move_file(source, destination): move or rename a file or directory",
+        "directory_tree": "directory_tree(path): get recursive tree structure of a directory",
+        "git_status": "git_status(): show working tree status",
+        "git_diff_staged": "git_diff_staged(): show staged changes",
+        "git_commit": "git_commit(message): commit staged changes with a message",
+        "git_log": "git_log(max_count?): show commit history, optionally limited",
+        "git_branch": "git_branch(): list all branches",
+        "git_create_branch": "git_create_branch(branch_name, base_branch?): create a new branch",
+    }
+
+    tools_text = "\n".join(f"- {tool_descriptions[t]}" for t in subset_tools)
+
+    examples_text = ""
+    for tool in subset_tools:
+        for query, response in RAW_GEMMA_FEW_SHOT.get(tool, []):
+            examples_text += f'User: "{query}" → {response}\n'
+
+    return (
+        "You are a tool router. Given a user query, "
+        "output a JSON tool call. Output ONLY the JSON object, nothing else.\n\n"
+        f"Available tools:\n{tools_text}\n\n"
+        f"Examples:\n{examples_text}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +238,7 @@ async def call_specialist(
 
 
 async def call_raw_gemma(
-    client: httpx.AsyncClient, query: str
+    client: httpx.AsyncClient, query: str, system_prompt: str
 ) -> dict:
     """Call raw Gemma 3 270M with few-shot system prompt + JSON format."""
     payload = {
@@ -144,7 +247,7 @@ async def call_raw_gemma(
         "format": "json",
         "options": {"temperature": 0},
         "messages": [
-            {"role": "system", "content": RAW_GEMMA_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": query},
         ],
     }
@@ -290,25 +393,13 @@ def parse_response(data: dict, mode: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def normalize_args(args: dict) -> dict:
-    """Normalize args for comparison (strip trailing slashes, lowercase)."""
-    normalized = {}
-    for k, v in args.items():
-        if isinstance(v, str):
-            # Don't normalize path values — exact match matters
-            normalized[k] = v
-        else:
-            normalized[k] = v
-    return normalized
-
-
 def score_result(predicted: dict, expected: dict) -> dict:
     """Score a single prediction against expected output."""
     expected_tool = expected.get("tool")
-    expected_args = normalize_args(expected.get("args", {}))
+    expected_args = expected.get("args", {})
 
     pred_tool = predicted.get("tool")
-    pred_args = normalize_args(predicted.get("args", {}))
+    pred_args = predicted.get("args", {})
 
     tool_correct = pred_tool == expected_tool
     args_correct = pred_args == expected_args
@@ -326,44 +417,87 @@ def score_result(predicted: dict, expected: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Main benchmark
+# Data loading and sampling
 # ---------------------------------------------------------------------------
 
 
-async def run_benchmark() -> tuple[dict, list[dict]]:
-    """Run full benchmark across all models. Returns (results, examples)."""
-    console.print("[bold cyan]Edge MCP Caller — Benchmark (Step 4)[/bold cyan]\n")
-
-    # Load eval data
-    examples = []
+def load_eval_data(subset_tools: list[str], per_tool: int, seed: int = 42) -> list[dict]:
+    """Load eval examples filtered by subset tools, sampled to per_tool each."""
+    all_examples = []
     with open(EVAL_FILE) as f:
         for line in f:
             ex = json.loads(line)
             query = ex["messages"][0]["content"]
             expected = json.loads(ex["messages"][1]["content"])
-            examples.append({
-                "query": query,
-                "expected": expected,
-                "category": ex.get("category", "clean"),
-            })
+            tool = expected.get("tool")
+            if tool in subset_tools:
+                all_examples.append({
+                    "query": query,
+                    "expected": expected,
+                    "category": ex.get("category", "clean"),
+                })
 
-    console.print(f"Loaded {len(examples)} eval examples\n")
+    # Sample per_tool examples per tool (stratified)
+    rng = random.Random(seed)
+    by_tool: dict[str, list[dict]] = {}
+    for ex in all_examples:
+        tool = ex["expected"]["tool"]
+        by_tool.setdefault(tool, []).append(ex)
 
-    # Load tools for FunctionGemma / GPT-OSS
-    ollama_tools = load_tools_for_ollama()
+    sampled = []
+    for tool in subset_tools:
+        pool = by_tool.get(tool, [])
+        if per_tool > 0 and len(pool) > per_tool:
+            sampled.extend(rng.sample(pool, per_tool))
+        else:
+            sampled.extend(pool)
+
+    rng.shuffle(sampled)
+    return sampled
+
+
+# ---------------------------------------------------------------------------
+# Main benchmark for a single subset
+# ---------------------------------------------------------------------------
+
+
+async def run_subset_benchmark(
+    subset_size: int,
+    per_tool: int,
+) -> tuple[dict, list[dict]]:
+    """Run benchmark for one tool subset. Returns (all_results, examples)."""
+    subset_tools = SUBSETS[subset_size]
+
+    console.print(f"\n[bold cyan]═══ {subset_size}-Tool Benchmark ═══[/bold cyan]")
+    console.print(f"Tools: {', '.join(subset_tools)}\n")
+
+    # Load eval data
+    examples = load_eval_data(subset_tools, per_tool)
+    console.print(f"Loaded {len(examples)} eval examples ({per_tool}/tool, {subset_size} tools)\n")
+
+    if not examples:
+        console.print("[red]No eval examples found for this subset![/red]")
+        return {}, examples
+
+    # Load tool schemas for this subset
+    all_schemas = load_all_tool_schemas()
+    subset_schemas = get_tools_for_subset(all_schemas, subset_tools)
+
+    # Build raw Gemma prompt for this subset
+    raw_gemma_prompt = build_raw_gemma_prompt(subset_tools)
 
     # Check if GPT-OSS is available
     nim_available = bool(os.environ.get("NVIDIA_API_KEY"))
     if not nim_available:
         console.print("[yellow]NVIDIA_API_KEY not set — skipping GPT-OSS-120B[/yellow]\n")
 
-    # Warm up local models (first call loads model into VRAM)
+    # Warm up local models
     console.print("[bold]Warming up models...[/bold]")
     async with httpx.AsyncClient(timeout=120.0) as client:
         warmup_query = "list files in src/"
         await call_specialist(client, warmup_query)
-        await call_raw_gemma(client, warmup_query)
-        await call_functiongemma(client, warmup_query, ollama_tools)
+        await call_raw_gemma(client, warmup_query, raw_gemma_prompt)
+        await call_functiongemma(client, warmup_query, subset_schemas)
     console.print("   All models loaded.\n")
 
     # Run benchmark
@@ -371,13 +505,14 @@ async def run_benchmark() -> tuple[dict, list[dict]]:
 
     async with httpx.AsyncClient(timeout=120.0) as client:
         for model_key, model_info in MODELS.items():
-            # Skip GPT-OSS if no API key
             if model_key == "gpt-oss-120b" and not nim_available:
                 continue
 
             console.print(f"[bold]Benchmarking: {model_info['description']}[/bold] ({model_info['ollama_name']})")
             if model_key == "gpt-oss-120b":
-                console.print(f"   [dim](rate limited: {NIM_RPM} RPM → ~{len(examples) * 60 // NIM_RPM // 60}m {len(examples) * 60 // NIM_RPM % 60}s estimated)[/dim]")
+                est_min = len(examples) * 60 // NIM_RPM // 60
+                est_sec = len(examples) * 60 // NIM_RPM % 60
+                console.print(f"   [dim](rate limited: {NIM_RPM} RPM → ~{est_min}m {est_sec}s estimated)[/dim]")
 
             results = []
             errors = 0
@@ -411,17 +546,18 @@ async def run_benchmark() -> tuple[dict, list[dict]]:
                         if model_key == "edge-mcp-caller":
                             pred = await call_specialist(client, query)
                         elif model_key == "gemma3-270m-raw":
-                            pred = await call_raw_gemma(client, query)
+                            pred = await call_raw_gemma(client, query, raw_gemma_prompt)
                         elif model_key == "functiongemma-270m":
-                            pred = await call_functiongemma(client, query, ollama_tools)
+                            pred = await call_functiongemma(client, query, subset_schemas)
                         elif model_key == "gpt-oss-120b":
-                            pred = await call_gpt_oss(client, query, ollama_tools)
+                            pred = await call_gpt_oss(client, query, subset_schemas)
                         else:
                             continue
 
                         score = score_result(pred, ex["expected"])
                         results.append({
                             "query": query,
+                            "category": ex["category"],
                             "prediction": pred,
                             "score": score,
                         })
@@ -433,6 +569,7 @@ async def run_benchmark() -> tuple[dict, list[dict]]:
                         errors += 1
                         results.append({
                             "query": query,
+                            "category": ex["category"],
                             "prediction": {"error": str(e)},
                             "score": {
                                 "tool_correct": False,
@@ -455,15 +592,23 @@ async def run_benchmark() -> tuple[dict, list[dict]]:
     return all_results, examples
 
 
-def compute_metrics(all_results: dict, examples_with_category: list[dict] | None = None) -> dict:
+# ---------------------------------------------------------------------------
+# Metrics computation
+# ---------------------------------------------------------------------------
+
+
+def compute_metrics(
+    all_results: dict,
+    subset_tools: list[str],
+) -> dict:
     """Compute aggregate metrics from benchmark results."""
-    if examples_with_category is None:
-        examples_with_category = []
     metrics = {}
 
     for model_key, data in all_results.items():
         results = data["results"]
         n = len(results)
+        if n == 0:
+            continue
 
         # Overall accuracy
         tool_acc = sum(1 for r in results if r["score"]["tool_correct"]) / n
@@ -472,7 +617,7 @@ def compute_metrics(all_results: dict, examples_with_category: list[dict] | None
 
         # Per-tool breakdown
         per_tool = {}
-        for tool_name in ALL_TOOLS:
+        for tool_name in subset_tools:
             tool_results = [r for r in results if r["score"]["expected_tool"] == tool_name]
             if tool_results:
                 per_tool[tool_name] = {
@@ -482,20 +627,17 @@ def compute_metrics(all_results: dict, examples_with_category: list[dict] | None
                     "combined_acc": sum(1 for r in tool_results if r["score"]["combined_correct"]) / len(tool_results),
                 }
 
-        # Per-category breakdown (uses "category" tag from eval set)
+        # Per-category breakdown
         per_category = {}
-        for category in ["clean", "messy", "adversarial"]:
-            cat_indices = [i for i, ex_data in enumerate(examples_with_category)
-                          if ex_data.get("category") == category]
-            if cat_indices:
-                cat_results = [results[i] for i in cat_indices if i < len(results)]
-                if cat_results:
-                    per_category[category] = {
-                        "count": len(cat_results),
-                        "tool_acc": sum(1 for r in cat_results if r["score"]["tool_correct"]) / len(cat_results),
-                        "args_acc": sum(1 for r in cat_results if r["score"]["args_correct"]) / len(cat_results),
-                        "combined_acc": sum(1 for r in cat_results if r["score"]["combined_correct"]) / len(cat_results),
-                    }
+        for category in CATEGORIES:
+            cat_results = [r for r in results if r.get("category") == category]
+            if cat_results:
+                per_category[category] = {
+                    "count": len(cat_results),
+                    "tool_acc": sum(1 for r in cat_results if r["score"]["tool_correct"]) / len(cat_results),
+                    "args_acc": sum(1 for r in cat_results if r["score"]["args_correct"]) / len(cat_results),
+                    "combined_acc": sum(1 for r in cat_results if r["score"]["combined_correct"]) / len(cat_results),
+                }
 
         # Token and latency stats (exclude errors)
         valid = [r for r in results if not r["prediction"].get("error")]
@@ -521,47 +663,52 @@ def compute_metrics(all_results: dict, examples_with_category: list[dict] | None
     return metrics
 
 
-def print_results(metrics: dict) -> None:
-    """Print formatted benchmark results."""
-    console.print("\n[bold cyan]═══ Benchmark Results ═══[/bold cyan]\n")
+# ---------------------------------------------------------------------------
+# Display
+# ---------------------------------------------------------------------------
+
+
+def print_results(metrics: dict, subset_size: int, subset_tools: list[str]) -> None:
+    """Print formatted benchmark results for a single subset."""
+    console.print(f"\n[bold cyan]═══ {subset_size}-Tool Results ═══[/bold cyan]\n")
 
     # Overall comparison table
-    table = Table(title="Overall Accuracy", show_lines=True)
+    table = Table(title=f"Overall Accuracy ({subset_size} tools)", show_lines=True)
     table.add_column("Model", style="cyan", min_width=30)
     table.add_column("Tool Acc", justify="right")
     table.add_column("Args Acc", justify="right")
     table.add_column("Combined", justify="right", style="bold")
-    table.add_column("Avg Prompt Tokens", justify="right")
-    table.add_column("Avg Latency (ms)", justify="right")
+    table.add_column("Avg Tokens", justify="right")
+    table.add_column("Avg Latency", justify="right")
     table.add_column("Errors", justify="right")
 
     model_order = [k for k in MODELS if k in metrics]
     for model_key in model_order:
         m = metrics[model_key]
-        combined_str = f"{m['combined_accuracy']:.1%}"
         table.add_row(
             f"{m['description']}\n({m['ollama_name']})",
             f"{m['tool_accuracy']:.1%}",
             f"{m['args_accuracy']:.1%}",
-            combined_str,
+            f"{m['combined_accuracy']:.1%}",
             f"{m['avg_prompt_tokens']:.0f}",
-            f"{m['avg_latency_ms']:.0f}",
+            f"{m['avg_latency_ms']:.0f}ms",
             str(m["errors"]),
         )
 
     console.print(table)
 
-    # Per-tool breakdown
-    for model_key in model_order:
-        m = metrics[model_key]
-        tool_table = Table(title=f"Per-Tool Breakdown: {m['description']}")
+    # Per-tool breakdown (specialist only, to keep output manageable)
+    specialist_key = "edge-mcp-caller"
+    if specialist_key in metrics:
+        m = metrics[specialist_key]
+        tool_table = Table(title=f"Per-Tool: {m['description']} ({subset_size} tools)")
         tool_table.add_column("Tool", style="cyan")
         tool_table.add_column("Count", justify="right")
         tool_table.add_column("Tool Acc", justify="right")
         tool_table.add_column("Args Acc", justify="right")
         tool_table.add_column("Combined", justify="right", style="bold")
 
-        for tool_name in ALL_TOOLS:
+        for tool_name in subset_tools:
             pt = m["per_tool"].get(tool_name, {})
             if pt:
                 tool_table.add_row(
@@ -574,248 +721,96 @@ def print_results(metrics: dict) -> None:
 
         console.print(tool_table)
 
-        # Per-category breakdown (if available)
-        if m.get("per_category"):
-            cat_table = Table(title=f"Per-Category Breakdown: {m['description']}")
-            cat_table.add_column("Category", style="cyan")
-            cat_table.add_column("Count", justify="right")
-            cat_table.add_column("Tool Acc", justify="right")
-            cat_table.add_column("Args Acc", justify="right")
-            cat_table.add_column("Combined", justify="right", style="bold")
+    # Per-category breakdown (specialist only)
+    if specialist_key in metrics and metrics[specialist_key].get("per_category"):
+        m = metrics[specialist_key]
+        cat_table = Table(title=f"Per-Category: {m['description']} ({subset_size} tools)")
+        cat_table.add_column("Category", style="cyan")
+        cat_table.add_column("Count", justify="right")
+        cat_table.add_column("Tool Acc", justify="right")
+        cat_table.add_column("Args Acc", justify="right")
+        cat_table.add_column("Combined", justify="right", style="bold")
 
-            for cat_name in ["clean", "messy", "adversarial"]:
-                pc = m["per_category"].get(cat_name, {})
-                if pc:
-                    cat_table.add_row(
-                        cat_name,
-                        str(pc["count"]),
-                        f"{pc['tool_acc']:.1%}",
-                        f"{pc['args_acc']:.1%}",
-                        f"{pc['combined_acc']:.1%}",
-                    )
-
-            console.print(cat_table)
-
-    # Latency comparison
-    lat_table = Table(title="Latency Comparison (ms, excluding model load)")
-    lat_table.add_column("Model", style="cyan", min_width=30)
-    lat_table.add_column("Average", justify="right")
-    lat_table.add_column("Median", justify="right")
-    lat_table.add_column("P95", justify="right")
-
-    for model_key in model_order:
-        m = metrics[model_key]
-        lat_table.add_row(
-            m["description"],
-            f"{m['avg_latency_ms']:.0f}",
-            f"{m['median_latency_ms']:.0f}",
-            f"{m['p95_latency_ms']:.0f}",
-        )
-
-    console.print(lat_table)
-
-    # Prompt efficiency comparison
-    console.print("\n[bold]Prompt Efficiency:[/bold]")
-    specialist_tokens = metrics["edge-mcp-caller"]["avg_prompt_tokens"]
-    for model_key in model_order:
-        if model_key == "edge-mcp-caller":
-            continue
-        other_tokens = metrics[model_key]["avg_prompt_tokens"]
-        if specialist_tokens > 0 and other_tokens > 0:
-            ratio = other_tokens / specialist_tokens
-            console.print(
-                f"  {metrics[model_key]['description']}: "
-                f"{other_tokens:.0f} tokens/request "
-                f"({ratio:.0f}x more than specialist's {specialist_tokens:.0f})"
-            )
-
-
-def generate_report_html(metrics: dict) -> str:
-    """Generate HTML report for benchmark results."""
-    model_order = [k for k in MODELS if k in metrics]
-
-    rows = []
-    for model_key in model_order:
-        m = metrics[model_key]
-        rows.append(f"""
-        <tr>
-            <td><strong>{m['description']}</strong><br><code>{m['ollama_name']}</code></td>
-            <td>{m['tool_accuracy']:.1%}</td>
-            <td>{m['args_accuracy']:.1%}</td>
-            <td><strong>{m['combined_accuracy']:.1%}</strong></td>
-            <td>{m['avg_prompt_tokens']:.0f}</td>
-            <td>{m['avg_latency_ms']:.0f}</td>
-        </tr>""")
-
-    per_tool_rows = []
-    for model_key in model_order:
-        m = metrics[model_key]
-        for tool_name in ALL_TOOLS:
-            pt = m["per_tool"].get(tool_name, {})
-            if pt:
-                per_tool_rows.append(f"""
-        <tr>
-            <td>{m['description']}</td>
-            <td><code>{tool_name}</code></td>
-            <td>{pt['count']}</td>
-            <td>{pt['tool_acc']:.1%}</td>
-            <td>{pt['args_acc']:.1%}</td>
-            <td><strong>{pt['combined_acc']:.1%}</strong></td>
-        </tr>""")
-
-    # Per-category rows
-    per_cat_rows = []
-    for model_key in model_order:
-        m = metrics[model_key]
-        for cat_name in ["clean", "messy", "adversarial"]:
-            pc = m.get("per_category", {}).get(cat_name, {})
+        for cat_name in CATEGORIES:
+            pc = m["per_category"].get(cat_name, {})
             if pc:
-                per_cat_rows.append(f"""
-        <tr>
-            <td>{m['description']}</td>
-            <td>{cat_name}</td>
-            <td>{pc['count']}</td>
-            <td>{pc['tool_acc']:.1%}</td>
-            <td>{pc['args_acc']:.1%}</td>
-            <td><strong>{pc['combined_acc']:.1%}</strong></td>
-        </tr>""")
+                cat_table.add_row(
+                    cat_name,
+                    str(pc["count"]),
+                    f"{pc['tool_acc']:.1%}",
+                    f"{pc['args_acc']:.1%}",
+                    f"{pc['combined_acc']:.1%}",
+                )
 
-    # Build summary cards dynamically
-    summary_cards = []
+        console.print(cat_table)
+
+
+def print_scaling_summary(all_subset_metrics: dict[int, dict]) -> None:
+    """Print scaling curve summary across all subsets."""
+    console.print(f"\n[bold cyan]═══ Scaling Curve ═══[/bold cyan]\n")
+
+    table = Table(title="Tool Routing Accuracy by Subset Size", show_lines=True)
+    table.add_column("Model", style="cyan", min_width=30)
+    for size in sorted(all_subset_metrics.keys()):
+        table.add_column(f"{size}-tool", justify="right")
+
+    model_order = [k for k in MODELS if any(k in m for m in all_subset_metrics.values())]
     for model_key in model_order:
-        m = metrics[model_key]
-        summary_cards.append(f"""
-        <div class="summary-card">
-            <div>{m['description']}</div>
-            <div class="metric">{m['combined_accuracy']:.1%}</div>
-            <div>combined accuracy</div>
-        </div>""")
+        row = [MODELS[model_key]["description"]]
+        for size in sorted(all_subset_metrics.keys()):
+            m = all_subset_metrics[size].get(model_key)
+            row.append(f"{m['tool_accuracy']:.1%}" if m else "—")
+        table.add_row(*row)
 
-    # Build latency rows dynamically
-    latency_rows = []
+    console.print(table)
+
+    # Combined accuracy table
+    table2 = Table(title="Combined Accuracy by Subset Size", show_lines=True)
+    table2.add_column("Model", style="cyan", min_width=30)
+    for size in sorted(all_subset_metrics.keys()):
+        table2.add_column(f"{size}-tool", justify="right")
+
     for model_key in model_order:
-        m = metrics[model_key]
-        latency_rows.append(
-            f"<tr><td>{m['description']}</td>"
-            f"<td>{m['avg_latency_ms']:.0f}</td>"
-            f"<td>{m['median_latency_ms']:.0f}</td>"
-            f"<td>{m['p95_latency_ms']:.0f}</td></tr>"
-        )
+        row = [MODELS[model_key]["description"]]
+        for size in sorted(all_subset_metrics.keys()):
+            m = all_subset_metrics[size].get(model_key)
+            row.append(f"{m['combined_accuracy']:.1%}" if m else "—")
+        table2.add_row(*row)
 
-    # Build prompt efficiency lines
-    specialist_tokens = metrics["edge-mcp-caller"]["avg_prompt_tokens"]
-    efficiency_lines = [
-        f"<p>Specialist model uses <strong>{specialist_tokens:.0f}</strong> tokens per request (no schema in prompt).</p>"
-    ]
-    for model_key in model_order:
-        if model_key == "edge-mcp-caller":
-            continue
-        m = metrics[model_key]
-        if m["avg_prompt_tokens"] > 0:
-            ratio = m["avg_prompt_tokens"] / max(specialist_tokens, 1)
-            efficiency_lines.append(
-                f"<p>{m['description']} uses <strong>{m['avg_prompt_tokens']:.0f}</strong> "
-                f"tokens per request ({ratio:.0f}x more).</p>"
-            )
-
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Edge MCP Caller — Benchmark Report</title>
-    <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 960px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; }}
-        h1 {{ color: #2563eb; }}
-        h2 {{ color: #374151; margin-top: 2em; }}
-        table {{ border-collapse: collapse; width: 100%; margin: 1em 0; }}
-        th, td {{ border: 1px solid #d1d5db; padding: 10px 14px; text-align: left; }}
-        th {{ background: #f3f4f6; font-weight: 600; }}
-        tr:nth-child(even) {{ background: #f9fafb; }}
-        code {{ background: #e5e7eb; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }}
-        .highlight {{ background: #dcfce7; font-weight: bold; }}
-        .metric {{ font-size: 2em; font-weight: bold; color: #2563eb; }}
-        .summary {{ display: flex; gap: 2em; margin: 1em 0; flex-wrap: wrap; }}
-        .summary-card {{ flex: 1; min-width: 180px; padding: 1em; background: #f0f9ff; border-radius: 8px; border: 1px solid #bae6fd; }}
-    </style>
-</head>
-<body>
-    <h1>Edge MCP Caller — Benchmark Report</h1>
-    <p>Head-to-head comparison of {len(model_order)} models on {metrics['edge-mcp-caller']['total']} eval examples (MCP filesystem tool calling). All runs at temperature=0.</p>
-
-    <div class="summary">
-        {"".join(summary_cards)}
-    </div>
-
-    <h2>Overall Results</h2>
-    <table>
-        <thead>
-            <tr><th>Model</th><th>Tool Acc</th><th>Args Acc</th><th>Combined</th><th>Avg Prompt Tokens</th><th>Avg Latency (ms)</th></tr>
-        </thead>
-        <tbody>
-            {"".join(rows)}
-        </tbody>
-    </table>
-
-    <h2>Per-Tool Breakdown</h2>
-    <table>
-        <thead>
-            <tr><th>Model</th><th>Tool</th><th>Count</th><th>Tool Acc</th><th>Args Acc</th><th>Combined</th></tr>
-        </thead>
-        <tbody>
-            {"".join(per_tool_rows)}
-        </tbody>
-    </table>
-
-    <h2>Per-Category Breakdown</h2>
-    <table>
-        <thead>
-            <tr><th>Model</th><th>Category</th><th>Count</th><th>Tool Acc</th><th>Args Acc</th><th>Combined</th></tr>
-        </thead>
-        <tbody>
-            {"".join(per_cat_rows)}
-        </tbody>
-    </table>
-
-    <h2>Latency Comparison</h2>
-    <table>
-        <thead>
-            <tr><th>Model</th><th>Average (ms)</th><th>Median (ms)</th><th>P95 (ms)</th></tr>
-        </thead>
-        <tbody>
-            {"".join(latency_rows)}
-        </tbody>
-    </table>
-
-    <h2>Prompt Efficiency</h2>
-    {"".join(efficiency_lines)}
-
-    <hr>
-    <p><em>Generated by <code>eval/benchmark.py</code> — temperature=0, deterministic</em></p>
-</body>
-</html>"""
-    return html
+    console.print(table2)
 
 
-def save_results(all_results: dict, metrics: dict) -> None:
-    """Save benchmark results and HTML report."""
+# ---------------------------------------------------------------------------
+# Save results
+# ---------------------------------------------------------------------------
+
+
+def save_subset_results(
+    all_results: dict,
+    metrics: dict,
+    subset_size: int,
+) -> None:
+    """Save benchmark results for a single subset."""
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Save raw results (without full prediction details to keep file manageable)
+    # Summary
     summary = {
-        "eval_examples": metrics["edge-mcp-caller"]["total"],
-        "models": {},
+        "subset_size": subset_size,
+        "subset_tools": SUBSETS[subset_size],
+        "models": metrics,
     }
-    for model_key, m in metrics.items():
-        summary["models"][model_key] = m
+    summary_path = RESULTS_DIR / f"benchmark_v03_{subset_size}tool.json"
+    summary_path.write_text(json.dumps(summary, indent=2))
+    console.print(f"[bold]Results saved:[/bold] {summary_path}")
 
-    # Save per-example results separately for analysis
+    # Detailed per-example results
     detailed = {}
     for model_key, data in all_results.items():
         detailed[model_key] = []
         for r in data["results"]:
             detailed[model_key].append({
                 "query": r["query"],
+                "category": r.get("category", "clean"),
                 "expected_tool": r["score"].get("expected_tool"),
                 "expected_args": r["score"].get("expected_args"),
                 "predicted_tool": r["score"].get("predicted_tool"),
@@ -830,26 +825,81 @@ def save_results(all_results: dict, metrics: dict) -> None:
                 "error": r["prediction"].get("error"),
             })
 
-    # Write files
-    results_path = RESULTS_DIR / "benchmark.json"
-    results_path.write_text(json.dumps(summary, indent=2))
-    console.print(f"\n[bold]Results saved:[/bold] {results_path}")
-
-    detailed_path = RESULTS_DIR / "benchmark_detailed.json"
+    detailed_path = RESULTS_DIR / f"benchmark_v03_{subset_size}tool_detailed.json"
     detailed_path.write_text(json.dumps(detailed, indent=2))
-    console.print(f"[bold]Detailed results:[/bold] {detailed_path}")
+    console.print(f"[bold]Detailed:[/bold] {detailed_path}")
 
-    report_path = RESULTS_DIR / "report.html"
-    html = generate_report_html(metrics)
-    report_path.write_text(html)
-    console.print(f"[bold]HTML report:[/bold] {report_path}")
+
+def save_scaling_results(all_subset_metrics: dict[int, dict]) -> None:
+    """Save scaling curve summary."""
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    scaling = {}
+    for size, metrics in sorted(all_subset_metrics.items()):
+        scaling[str(size)] = {}
+        for model_key, m in metrics.items():
+            scaling[str(size)][model_key] = {
+                "tool_accuracy": m["tool_accuracy"],
+                "args_accuracy": m["args_accuracy"],
+                "combined_accuracy": m["combined_accuracy"],
+                "avg_prompt_tokens": m["avg_prompt_tokens"],
+                "avg_latency_ms": m["avg_latency_ms"],
+                "total": m["total"],
+                "errors": m["errors"],
+            }
+
+    path = RESULTS_DIR / "benchmark_v03_scaling.json"
+    path.write_text(json.dumps(scaling, indent=2))
+    console.print(f"\n[bold]Scaling summary:[/bold] {path}")
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 
 async def main() -> None:
-    all_results, eval_examples = await run_benchmark()
-    metrics = compute_metrics(all_results, eval_examples)
-    print_results(metrics)
-    save_results(all_results, metrics)
+    parser = argparse.ArgumentParser(description="Edge MCP Caller Benchmark")
+    parser.add_argument(
+        "--subset", type=str, default="14",
+        help="Tool subset size: 3, 5, 8, 14, or 'all' for scaling curve (default: 14)",
+    )
+    parser.add_argument(
+        "--per-tool", type=int, default=30,
+        help="Number of eval examples per tool (default: 30, 0 = all)",
+    )
+    args = parser.parse_args()
+
+    console.print("[bold cyan]Edge MCP Caller — Benchmark (v0.3)[/bold cyan]")
+    console.print(f"Per-tool sample: {args.per_tool if args.per_tool > 0 else 'all'}\n")
+
+    if args.subset == "all":
+        # Run all subsets for scaling curve
+        all_subset_metrics: dict[int, dict] = {}
+        for size in [3, 5, 8, 14]:
+            results, examples = await run_subset_benchmark(size, args.per_tool)
+            if results:
+                metrics = compute_metrics(results, SUBSETS[size])
+                print_results(metrics, size, SUBSETS[size])
+                save_subset_results(results, metrics, size)
+                all_subset_metrics[size] = metrics
+
+        if all_subset_metrics:
+            print_scaling_summary(all_subset_metrics)
+            save_scaling_results(all_subset_metrics)
+    else:
+        # Single subset
+        subset_size = int(args.subset)
+        if subset_size not in SUBSETS:
+            console.print(f"[red]Invalid subset: {subset_size}. Must be 3, 5, 8, or 14.[/red]")
+            return
+
+        results, examples = await run_subset_benchmark(subset_size, args.per_tool)
+        if results:
+            metrics = compute_metrics(results, SUBSETS[subset_size])
+            print_results(metrics, subset_size, SUBSETS[subset_size])
+            save_subset_results(results, metrics, subset_size)
+
     console.print("\n[bold green]Benchmark complete![/bold green]")
 
 
