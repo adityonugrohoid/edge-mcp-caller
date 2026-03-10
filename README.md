@@ -6,9 +6,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-active-success.svg)](#)
 
-**Specialist 270M model that bakes MCP tool knowledge into weights — beating generalist function callers with 40x shorter prompts on edge devices.**
+**270M specialist model that bakes MCP tool knowledge into weights — 99.5% accuracy across 14 tools, beating a 120B model with 32x fewer prompt tokens.**
 
-[Getting Started](#getting-started) | [Architecture](#architecture) | [Benchmark](#benchmark) | [Roadmap](#roadmap)
+[Getting Started](#getting-started) | [Architecture](#architecture) | [Benchmark](#benchmark) | [Scaling Results](#scaling-results)
 
 </div>
 
@@ -16,66 +16,112 @@
 
 ## The Thesis
 
-Google's FunctionGemma takes Gemma 3 270M and makes it a **generalist** function caller — pass any tool schema in the prompt (~264 tokens), and it routes to the right tool.
+Google's FunctionGemma takes Gemma 3 270M and makes it a **generalist** function caller — pass any tool schema in the prompt, and it routes to the right tool.
 
-We take the **same base model** and make it a **specialist** — tool definitions baked directly into model weights. No schemas in the prompt. Query in (~10 tokens), JSON tool call out.
+We take the **same base model** and make it a **specialist** — tool definitions baked directly into model weights. No schemas in the prompt. Query in (~20 tokens), JSON tool call out.
 
 > A 270M model has no business being a generalist. Make it a specialist, deploy it on the edge, and let it do one job perfectly.
 
+## Results
+
+420 eval examples across 14 tools, deterministic (temp=0), each model tested in its native interface.
+
+| Model | Size | Tool Routing | Combined | Prompt Tokens | Latency |
+|-------|------|-------------|----------|---------------|---------|
+| **Ours (specialist)** | **270M** | **99.8%** | **99.5%** | **20** | **153ms** |
+| GPT-OSS 120B (NIM API) | 120B | 72.6% | 41.7% | 647 | 1,111ms |
+| FunctionGemma (Ollama tools API) | 270M | 21.4% | 13.6% | 967 | 235ms |
+| Raw Gemma 3 (few-shot prompt) | 270M | 33.3% | 11.4% | 1,092 | 905ms |
+
+The specialist uses 20 tokens per request regardless of tool count. Baselines scale linearly — 647 to 1,092 tokens at 14 tools — because they must pass tool schemas in every prompt.
+
 ## Features
 
-- **Specialist fine-tune** — tool knowledge baked into weights, not passed in prompts
-- **13x shorter prompts** — 20 tokens vs 264 tokens per call
-- **Edge-ready** — 291 MB, runs on phones, laptops, Raspberry Pi, 142ms avg latency
+- **14 tools, 2 MCP servers** — filesystem (8 tools) + git (6 tools)
+- **99.5% combined accuracy** — 12 of 14 tools at 100%, no degradation from 3 to 14 tools
+- **32x fewer tokens** — 20 tokens vs 647+ per request (schemas baked into weights)
+- **Edge-ready** — 291 MB Q8_0, runs on phones, laptops, Raspberry Pi
+- **153ms avg latency** — fully local, no cloud dependency, zero API cost
 - **MCP-native** — calls real MCP servers via standard protocol
-- **Head-to-head benchmark** — provable comparison against FunctionGemma, GPT-OSS-120B, and raw Gemma
-- **Zero API cost** — fully local inference, no cloud dependency
 
-## Tech Stack
+## Tool Set (14 tools)
 
-| Component | Technology |
-|-----------|------------|
-| Base Model | Gemma 3 270M (`google/gemma-3-270m-pt`) |
-| Fine-tuning | Unsloth (LoRA/QLoRA) |
-| Training Data | Synthetic via NVIDIA NIM API (llama-3.1-70b-instruct) |
-| Inference | Ollama / llama.cpp |
-| MCP Server | @modelcontextprotocol/server-filesystem |
-| Language | Python 3.12+ |
+### Filesystem MCP Server (8 tools)
+
+| Tool | Args |
+|------|------|
+| `list_directory` | `path` |
+| `read_file` | `path` |
+| `search_files` | `path`, `pattern` |
+| `write_file` | `path`, `content` |
+| `create_directory` | `path` |
+| `edit_file` | `path`, `old_text`, `new_text` |
+| `move_file` | `source`, `destination` |
+| `directory_tree` | `path` |
+
+### Git MCP Server (6 tools)
+
+| Tool | Args |
+|------|------|
+| `git_status` | _(none)_ |
+| `git_diff_staged` | _(none)_ |
+| `git_commit` | `message` |
+| `git_log` | `max_count` _(optional)_ |
+| `git_branch` | _(none)_ |
+| `git_create_branch` | `branch_name`, `base_branch` _(optional)_ |
 
 ## Architecture
 
-```mermaid
-graph LR
-    subgraph Edge Device
-        A["User Query<br/><i>~10 tokens</i>"] --> B["Gemma 3 270M<br/><i>specialist fine-tune</i>"]
-        B --> C["JSON Tool Call"]
-        C --> D["MCP Client"]
-    end
-
-    D -->|"MCP protocol"| E["MCP Filesystem<br/>Server"]
-    E --> F["Result"]
-
-    style A fill:#0f3460,color:#fff
-    style B fill:#533483,color:#fff
-    style C fill:#0f3460,color:#fff
-    style D fill:#16213e,color:#fff
-    style E fill:#16213e,color:#fff
-    style F fill:#0f3460,color:#fff
 ```
+Generalist (FunctionGemma / GPT-OSS):
+  Input:  [~600 tokens of schemas] + [query]  = ~650 tokens
+  Model:  params split between parsing schemas + routing intent
 
-### Generalist vs Specialist
-
-```
-FunctionGemma (generalist):
-  Input:  [~250 tokens of schemas] + [query]  = ~264 tokens
-  Model:  270M params split between parsing schemas + routing intent
-  Output: <start_function_call>call:tool{args}<end_function_call>
-
-Ours (specialist):
+Specialist (ours):
   Input:  [query only]  = ~20 tokens
-  Model:  270M params fully focused on routing intent for known tools
+  Model:  params fully focused on routing intent for known tools
   Output: {"tool": "list_directory", "args": {"path": "src/"}}
 ```
+
+### Inference Pipeline
+
+```
+User query (~20 tokens)
+    ↓
+Gemma 3 270M (specialist, tools in weights)
+    ↓ {"tool": "git_commit", "args": {"message": "fix auth bug"}}
+MCP Client Bridge (JSON → MCP tools/call)
+    ↓
+MCP Server (filesystem or git, standard, unchanged)
+    ↓
+Result to user
+```
+
+## Scaling Results
+
+The specialist is trained on all 14 tools simultaneously. We benchmark subsets to test if accuracy degrades as tool count increases.
+
+### Specialist Scaling Curve
+
+| Subset | Tools | Tool Routing | Combined | Tokens |
+|--------|-------|-------------|----------|--------|
+| 3-tool | list_directory, read_file, search_files | 100.0% | 98.9% | 18 |
+| 5-tool | + write_file, create_directory | 100.0% | 99.3% | 20 |
+| 8-tool | + edit_file, move_file, directory_tree | 99.6% | 99.2% | 21 |
+| 14-tool | + 6 git tools | 99.8% | 99.5% | 20 |
+
+**No degradation found.** The 270M specialist handles 14 tools as well as 3.
+
+### Baseline Scaling (Combined Accuracy)
+
+| Model | 3-tool | 5-tool | 8-tool | 14-tool |
+|-------|--------|--------|--------|---------|
+| **Specialist** | **98.9%** | **99.3%** | **99.2%** | **99.5%** |
+| GPT-OSS 120B | 33.3% | 25.3% | 27.5% | 41.7% |
+| FunctionGemma | 20.0% | 17.3% | 11.2% | 13.6% |
+| Raw Gemma 3 | 13.3% | 12.7% | 10.4% | 11.4% |
+
+Full per-tool and per-category breakdowns in [`docs/benchmark-scaling-results.md`](docs/benchmark-scaling-results.md).
 
 ## Getting Started
 
@@ -84,183 +130,92 @@ Ours (specialist):
 - Python 3.12+
 - NVIDIA GPU with 8GB+ VRAM (for training) or free Google Colab
 - Ollama (for inference)
-- Node.js 18+ (for MCP filesystem server)
+- Node.js 18+ (for MCP servers)
 
 ### Installation
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/adityonugrohoid/edge-mcp-caller.git
-   cd edge-mcp-caller
-   ```
-
-2. Create and activate a virtual environment:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   ```
-
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-### Configuration
-
 ```bash
+git clone https://github.com/adityonugrohoid/edge-mcp-caller.git
+cd edge-mcp-caller
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 cp .env.example .env
 ```
 
-## Usage
+### Usage
 
 ```bash
-# Step 1: Generate training data
-python data/generate_dataset.py
+# Step 1: Generate training data (Claude Code agents → data/generated/)
+#         Then merge: python data/merge_dataset.py
 
-# Step 2: Fine-tune (LoRA)
+# Step 2: Fine-tune (LoRA on Gemma 3 270M)
 python train/finetune.py
 
-# Step 3: Merge + convert to GGUF
+# Step 3: Merge adapter + convert to GGUF for Ollama
 python train/merge_and_convert.py
 
-# Step 4: Benchmark against FunctionGemma
-python eval/benchmark.py
+# Step 4: Benchmark (scaling curve across 4 models)
+python eval/benchmark.py                    # 14-tool, 30/tool
+python eval/benchmark.py --subset 3         # 3-tool subset
+python eval/benchmark.py --subset all       # full scaling curve
 
-# Step 5: Interactive demo
-python demo/cli.py                  # interactive mode
-python demo/cli.py -n 10            # batch: 10 eval examples through MCP
-python demo/cli.py -n 360           # batch: full eval set through MCP
-python demo/cli.py -n 5 --verbose   # batch with per-query pipeline detail
+# Step 5: Interactive demo (query → model → MCP server → result)
+python demo/cli.py                          # interactive mode
+python demo/cli.py /path/to/dir             # specify allowed directory
+python demo/cli.py -n 10                    # batch mode
+python demo/cli.py -n 5 --verbose           # batch with detail
 ```
 
-## Benchmark
+## Tech Stack
 
-360 eval examples, deterministic (temp=0), each model tested in its native interface. See [`docs/benchmark-methodology.md`](docs/benchmark-methodology.md) for full methodology and fairness analysis.
-
-| Model | Tool Acc | Args Acc | Combined | Avg Prompt Tokens | Avg Latency |
-|-------|----------|----------|----------|-------------------|-------------|
-| **Ours (specialist, 270M)** | **99.2%** | **90.8%** | **90.8%** | **20** | **142ms** |
-| GPT-OSS 120B (NIM API, ceiling) | 76.4% | 23.6% | 23.3% | 246 | 817ms |
-| FunctionGemma 270M (Ollama tools API) | 38.1% | 20.3% | 18.1% | 264 | 146ms |
-| Raw Gemma 3 270M (few-shot prompt) | 42.2% | 25.3% | 13.3% | 269 | 452ms |
-
-### Per-Tool Breakdown (specialist)
-
-| Tool | Count | Tool Acc | Args Acc | Combined |
-|------|-------|----------|----------|----------|
-| list_directory | 104 | 99.0% | 93.3% | 93.3% |
-| read_file | 125 | 99.2% | 96.0% | 96.0% |
-| search_files | 131 | 99.2% | 84.0% | 84.0% |
-
-### Prompt Efficiency
-
-- **Specialist**: 20 tokens/request (tools baked into weights)
-- **GPT-OSS 120B**: 246 tokens/request (12x more)
-- **FunctionGemma**: 264 tokens/request (13x more)
-- **Raw Gemma 3**: 269 tokens/request (14x more)
-
-Full results: [`results/benchmark.json`](results/benchmark.json) | [`results/report.html`](results/report.html) | [`docs/benchmark-methodology.md`](docs/benchmark-methodology.md)
-
-## Live Demo — End-to-End Pipeline
-
-Every query goes through the full pipeline: user query → Ollama specialist → JSON parse → MCP `tools/call` → real filesystem result. The CLI shows each step with metrics.
-
-### Single Query (verbose)
-
-```
-> find all Python files in eval/
-
-┌─────────────────────────── 1. Ollama Request ────────────────────────────┐
-│ {                                                                        │
-│   "model": "edge-mcp-caller:latest",                                     │
-│   "messages": [{"role": "user", "content": "find all Python files ..."}] │
-│ }                                                                        │
-└──────────────── POST http://localhost:11434/api/chat ────────────────────┘
-┌─────────────────────────── 2. Model Response ────────────────────────────┐
-│ Raw output:  {"tool":"search_files","args":{"path":"eval/","pattern":..} │
-│ Parsed tool: search_files                                                │
-│ Parsed args: {"path": "eval/", "pattern": "*.py"}                        │
-└──────────────────────────────────────────────────────────────────────────┘
-  Prompt tokens: 16 | Output tokens: 20 | Schema tokens: 0 (baked in)
-  Inference latency: 142ms
-
-┌─────────────────────────── 3. MCP Request ───────────────────────────────┐
-│ {"method": "tools/call",                                                 │
-│  "params": {"name": "search_files",                                      │
-│             "arguments": {"path": "eval/", "pattern": "*.py"}}}          │
-└──────────── stdio → @modelcontextprotocol/server-filesystem ─────────────┘
-┌─────────────────────────── 4. MCP Response ──────────────────────────────┐
-│ /home/user/projects/edge-mcp-caller/eval/benchmark.py                    │
-└──────────────────────────────────────────────────────────────────────────┘
-  MCP latency: 6ms | Total end-to-end: 149ms
-```
-
-### Full Eval Set — 360 Queries Through MCP
-
-`python demo/cli.py -n 360` — runs all 360 eval examples through the live MCP pipeline:
-
-| Metric | Value |
-|--------|-------|
-| Tool accuracy | **99.2%** (357/360) |
-| Args accuracy | **90.8%** (327/360) |
-| Combined accuracy | **90.8%** (327/360) |
-| MCP execution success | **100.0%** (360/360) |
-| Avg prompt tokens | 20 |
-| Avg model latency | 151ms |
-| Avg MCP latency | 111ms |
-| Avg total e2e latency | 263ms |
-| Throughput | 2.8 queries/sec |
-
-**0 MCP errors across 360 calls** — the model always produces valid, parseable JSON. Even when args are wrong (33 cases: trailing slashes, pattern formatting), the pipeline handles it gracefully without crashes.
-
-### Per-Tool MCP Pipeline Breakdown
-
-| Tool | Count | Tool Acc | Args Acc | Combined | MCP OK |
-|------|-------|----------|----------|----------|--------|
-| list_directory | 104 | 99.0% | 93.3% | 93.3% | 100.0% |
-| read_file | 125 | 99.2% | 96.0% | 96.0% | 100.0% |
-| search_files | 131 | 99.2% | 84.0% | 84.0% | 100.0% |
+| Component | Technology |
+|-----------|------------|
+| Base Model | Gemma 3 270M (`unsloth/gemma-3-270m-it`) |
+| Fine-tuning | Unsloth (LoRA r=128, BF16) |
+| Training Data | Claude Code agents (Sonnet 4.6), extraction-only rules |
+| Inference | Ollama (Q8_0 GGUF, 291 MB) |
+| MCP Servers | @modelcontextprotocol/server-filesystem, @modelcontextprotocol/server-git |
+| Language | Python 3.12+ |
+| Hardware | RTX 4060 Laptop (8GB VRAM) — single consumer GPU |
 
 ## Project Structure
 
 ```
 edge-mcp-caller/
 ├── data/
-│   ├── generate_dataset.py       # Synthetic data gen via NVIDIA NIM API
-│   ├── train.jsonl                # Fine-tuning dataset
-│   └── eval.jsonl                 # Held-out eval set
+│   ├── merge_dataset.py            # Merge generated/ → train.jsonl + eval.jsonl
+│   ├── generated/                  # Raw batches (timestamped, accumulative)
+│   ├── train.jsonl                 # 14,033 training examples
+│   └── eval.jsonl                  # 1,568 eval examples
 ├── tools/
-│   └── filesystem.json            # MCP tool definitions (reference)
+│   ├── filesystem.json             # 8 filesystem tool schemas
+│   └── git.json                    # 6 git tool schemas
 ├── train/
-│   ├── finetune.py                # LoRA fine-tune via Unsloth
-│   └── merge_and_convert.py       # Merge adapter + GGUF conversion
+│   ├── finetune.py                 # LoRA fine-tune via Unsloth
+│   └── merge_and_convert.py        # Merge adapter + GGUF conversion
 ├── eval/
-│   ├── benchmark.py               # Run all models on eval set
-│   └── compare_functiongemma.py   # Head-to-head comparison
+│   └── benchmark.py                # Scaling benchmark (3/5/8/14 tools × 4 models)
 ├── mcp/
-│   └── client.py                  # JSON → MCP tools/call bridge
+│   └── client.py                   # JSON → MCP tools/call bridge (14 tools, 2 servers)
 ├── demo/
-│   └── cli.py                     # Interactive CLI demo
+│   └── cli.py                      # Interactive CLI demo
 ├── docs/
-│   ├── training-lessons.md        # Training troubleshooting guide
-│   └── benchmark-methodology.md   # Benchmark fairness & methodology
-├── models/                        # Adapters + GGUF (gitignored)
-└── results/
-    ├── benchmark.json             # Raw benchmark numbers
-    ├── cli_batch.json             # Full 360-query MCP pipeline results
-    └── report.html                # Visual comparison report
+│   ├── benchmark-scaling-results.md # Full scaling curve results
+│   ├── generation-standard.md      # Data generation rules for all 14 tools
+│   ├── training-lessons.md         # Training/conversion troubleshooting
+│   ├── benchmark-methodology.md    # Benchmark fairness analysis
+│   └── real-world-use-cases.md     # Edge deployment scenarios
+├── models/                         # Adapters + GGUF (gitignored)
+└── results/                        # Benchmark outputs
 ```
 
-## Roadmap
+## Key Design Decisions
 
-- [x] **v0.1** — 3 read-only filesystem tools, specialist fine-tune, beat FunctionGemma
-- [ ] **v0.2** — + write operations (5 tools)
-- [ ] **v0.3** — + multi-argument tools (edit_file)
-- [ ] **v0.4** — + second MCP server (multi-server routing)
-- [ ] **v0.5** — multi-step agentic chains
-- [ ] **v1.0** — packaged edge MCP tool caller
-
-See [ROADMAP.md](ROADMAP.md) for details.
+- **Specialist = router + extractor, not generator.** The model picks the right tool and extracts arguments from the query. It does not invent paths or generate content.
+- **Extraction-only training data.** Every argument in the expected output must be extractable from the user's query. See [`docs/generation-standard.md`](docs/generation-standard.md).
+- **Simplified model output for complex tools.** `edit_file` outputs `{path, old_text, new_text}` — the MCP bridge converts to the server's `{path, edits: [{oldText, newText}]}` format. Git tools omit `repo_path` — bridge injects from config.
+- **No `mcp/__init__.py`.** The local `mcp/` directory would shadow the PyPI `mcp` package. `demo/cli.py` uses importlib to load it.
 
 ## License
 

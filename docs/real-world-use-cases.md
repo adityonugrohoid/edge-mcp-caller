@@ -2,7 +2,7 @@
 
 ## The Pattern
 
-The v0.1 filesystem tools (list_directory, read_file, search_files) are the proof of concept. The real finding is: **at 270M scale, specialization is the only approach that works — and for fixed-tool edge deployments, it's not just viable, it's superior to models 440x larger.**
+The 14-tool benchmark (8 filesystem + 6 git) proves: **at 270M scale, specialization is the only approach that works — and for fixed-tool edge deployments, it's not just viable, it's superior to models 440x larger.**
 
 Any scenario where:
 - The tools are **stable** (don't change frequently)
@@ -45,23 +45,23 @@ That's the specialist's territory.
 
 | Factor | Specialist (ours) | Generalist (cloud) |
 |--------|-------------------|---------------------|
-| Prompt overhead | 20 tokens | 264+ tokens |
-| Latency | 263ms (local) | 800ms+ (network round-trip) |
+| Prompt overhead | 20 tokens | 647+ tokens |
+| Latency | 153ms (local) | 800ms+ (network round-trip) |
 | Internet required | No | Yes |
 | Privacy | Data stays on device | Data sent to cloud |
 | API cost | $0 | Per-request billing |
 | Model size | 291MB | N/A (cloud-hosted) |
 | Offline capable | Yes | No |
-| Tool changes | Retrain (~1 hour) | Update prompt (instant) |
+| Tool changes | Retrain (~2 hours) | Update prompt (instant) |
 
-The trade-off is explicit: the specialist trades **flexibility** (can't add tools without retraining) for **efficiency** (13x fewer tokens, local inference, zero cost). For fixed-tool edge deployments, that trade-off is clearly worth it.
+The trade-off is explicit: the specialist trades **flexibility** (can't add tools without retraining) for **efficiency** (32x fewer tokens, local inference, zero cost). For fixed-tool edge deployments, that trade-off is clearly worth it.
 
-## The v0.1 Proof
+## The Proof
 
-- 90.8% combined accuracy at 270M scale
-- Beats GPT-OSS 120B (23.3%) — a model 440x larger
-- 100% MCP execution success across 360 queries
-- 20 tokens/request vs 264 tokens/request (13x savings)
-- 263ms end-to-end latency on a laptop
+- **99.5% combined accuracy** at 270M scale across 14 tools
+- Beats GPT-OSS 120B (41.7%) — a model 440x larger
+- 20 tokens/request vs 647+ tokens/request (32x savings)
+- 153ms avg latency on a laptop
+- No accuracy degradation from 3 to 14 tools
 
-The filesystem tools prove the approach. The next step is applying it to one of these domains.
+The filesystem + git tools prove the approach. The next step is applying it to one of these domains.

@@ -870,7 +870,7 @@ async def main() -> None:
     )
     args = parser.parse_args()
 
-    console.print("[bold cyan]Edge MCP Caller — Benchmark (v0.3)[/bold cyan]")
+    console.print("[bold cyan]Edge MCP Caller — Benchmark[/bold cyan]")
     console.print(f"Per-tool sample: {args.per_tool if args.per_tool > 0 else 'all'}\n")
 
     if args.subset == "all":
