@@ -38,6 +38,9 @@ data/archive/v03_generated/
 # Results (regenerated)
 results/
 
+# E2E test fixture (created by setup script)
+tests/e2e/fixture/
+
 # IDE
 .vscode/
 .idea/
