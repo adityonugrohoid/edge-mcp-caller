@@ -35,6 +35,9 @@ data/eval.jsonl
 data/archive/v02_generated/
 data/archive/v03_generated/
 
+# Archive (internal drafts, not tracked)
+archive/
+
 # Results (regenerated)
 results/
 
