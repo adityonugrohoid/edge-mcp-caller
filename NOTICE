@@ -1,0 +1,17 @@
+Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms
+
+The model weights published as this repository's release asset
+(edge-mcp-caller-q8_0.gguf) are a Model Derivative of Gemma 3 270M
+(unsloth/gemma-3-270m-it). They were modified: LoRA fine-tuned on this
+project's tool-calling data, merged into the base weights, converted to
+GGUF, and quantized to Q8_0.
+
+The weights are subject to the use restrictions in Section 3.2 of the
+Gemma Terms of Use, including the Gemma Prohibited Use Policy at
+https://ai.google.dev/gemma/prohibited_use_policy. Anyone who uses or
+redistributes the weights must comply with those terms.
+
+Gemma Terms of Use: https://ai.google.dev/gemma/terms
+
+The source code in this repository is licensed separately under the MIT
+License (see LICENSE). The MIT License does not apply to the model weights.

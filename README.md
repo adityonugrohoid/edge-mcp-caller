@@ -126,6 +126,17 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
+### Download the model
+
+The fine-tuned weights ship as a GitHub release asset. Download the GGUF next to the `Modelfile` and register it with Ollama:
+
+```bash
+curl -LO https://github.com/adityonugrohoid/edge-mcp-caller/releases/latest/download/edge-mcp-caller-q8_0.gguf
+sha256sum edge-mcp-caller-q8_0.gguf
+# 74e448e69efea06ffa3ccebfb73ba260e8c274e6d722923fafae318b4ab2e75a
+ollama create edge-mcp-caller -f Modelfile
+```
+
 ## Usage
 
 ```bash
@@ -279,7 +290,9 @@ edge-mcp-caller/
 ├── docs/                           # Benchmark, methodology, generation, and use-case docs
 ├── demos/                          # e2e SVG/GIF + per-tool casts and GIFs
 ├── data/generated/, data/train.jsonl, data/eval.jsonl   # gitignored, generated
-├── models/, results/               # gitignored adapters, GGUF, and benchmark outputs
+├── models/, results/               # gitignored adapters, merged model, and benchmark outputs
+├── Modelfile                       # Ollama Modelfile for the released GGUF
+├── NOTICE                          # Gemma Terms of Use notice for the weights
 └── requirements.txt
 ```
 
@@ -306,7 +319,9 @@ python tests/e2e/run_e2e.py --reset
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+The source code is licensed under the [MIT License](LICENSE).
+
+The model weights in the release asset are a modified Gemma 3 270M (LoRA fine-tuned, merged, converted to GGUF) and are subject to the [Gemma Terms of Use](https://ai.google.dev/gemma/terms) and the [Gemma Prohibited Use Policy](https://ai.google.dev/gemma/prohibited_use_policy), not MIT. See [NOTICE](NOTICE).
 
 ## Author
 
