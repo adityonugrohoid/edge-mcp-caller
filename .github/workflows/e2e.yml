@@ -1,0 +1,80 @@
+name: e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OLLAMA_VERSION: v0.40.0
+  OLLAMA_SHA256: c94aa4156b3d13e64ebc2efe5ea53f015384c882be776e6695cfb37fb180d5ad
+  MODEL_SHA256: 74e448e69efea06ffa3ccebfb73ba260e8c274e6d722923fafae318b4ab2e75a
+
+jobs:
+  e2e:
+    name: e2e against the released model (cpu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Install Python dependencies
+        run: pip install -r tests/e2e/requirements.txt
+
+      - name: Install Ollama
+        run: |
+          curl -fsSLO "https://github.com/ollama/ollama/releases/download/${OLLAMA_VERSION}/ollama-linux-amd64.tar.zst"
+          echo "${OLLAMA_SHA256}  ollama-linux-amd64.tar.zst" | sha256sum -c -
+          sudo tar --zstd -xf ollama-linux-amd64.tar.zst -C /usr
+          rm ollama-linux-amd64.tar.zst
+          ollama --version
+
+      - name: Start Ollama
+        run: |
+          nohup ollama serve > "${RUNNER_TEMP}/ollama.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://localhost:11434/api/version && exit 0
+            sleep 1
+          done
+          cat "${RUNNER_TEMP}/ollama.log"
+          exit 1
+
+      - name: Download the released model
+        run: |
+          curl -fsSLO https://github.com/adityonugrohoid/edge-mcp-caller/releases/latest/download/edge-mcp-caller-q8_0.gguf
+          echo "${MODEL_SHA256}  edge-mcp-caller-q8_0.gguf" | sha256sum -c -
+
+      - name: Register the model with Ollama
+        run: ollama create edge-mcp-caller -f Modelfile
+
+      - name: Create the test fixture
+        run: python tests/e2e/setup_fixture.py
+
+      - name: Run the e2e suite
+        run: python tests/e2e/run_e2e.py --verbose
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-results
+          path: results/e2e_results.json
+          if-no-files-found: warn
+
+      - name: Show Ollama log on failure
+        if: failure()
+        run: cat "${RUNNER_TEMP}/ollama.log"
