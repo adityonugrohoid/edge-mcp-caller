@@ -50,7 +50,7 @@ This project takes the same base model and makes it a specialist. Tool definitio
 - **14 tools, 2 MCP servers**: filesystem (8 tools) plus git (6 tools)
 - **99.5% combined accuracy**: 12 of 14 tools at 100%, no degradation from 3 to 14 tools
 - **32x fewer tokens**: 20 tokens vs 647+ per request, because schemas live in the weights
-- **Edge-ready**: 291 MB Q8_0, runs on phones, laptops, Raspberry Pi
+- **Edge-ready**: 291 MB Q8_0 GGUF, served locally through Ollama on an 8 GB laptop GPU; small enough for phone or Raspberry Pi class hardware, untested there
 - **153ms average latency**: fully local, no cloud dependency, zero API cost
 - **MCP-native**: calls real MCP servers over the standard protocol
 
@@ -110,7 +110,7 @@ Per-tool casts and GIFs for all 14 tools live in [`demos/per-tool/`](demos/per-t
 ### Prerequisites
 
 - Python 3.12+
-- NVIDIA GPU with 8GB+ VRAM for training, or free Google Colab
+- NVIDIA GPU with 8GB+ VRAM for training
 - Ollama for inference
 - Node.js 18+ for the filesystem MCP server
 - uv / uvx for the git MCP server
@@ -259,7 +259,7 @@ Generation scripts live under `data/` (`generate_dataset.py`, `clean_and_backfil
 ```
 edge-mcp-caller/
 ├── data/
-│   ├── generate_dataset.py         # Generate raw batches via Claude Code agents
+│   ├── generate_dataset.py         # First-iteration NIM generator; the 14-tool corpus came from Claude Code agents
 │   ├── clean_and_backfill.py       # Clean and backfill generated batches
 │   └── merge_dataset.py            # Merge generated batches into train/eval jsonl
 ├── tools/

@@ -174,7 +174,7 @@ From spatial-llm (Qwen3-0.6B, 751M params):
 | Project | Model | Examples | Epochs | Steps | Time |
 |---|---|---|---|---|---|
 | spatial-llm | Qwen3-0.6B (QLoRA) | 39 | 3 | 15 | 57 seconds |
-| edge-mcp-caller | Gemma 3 270M (LoRA BF16) | 3240 | 3 | 609 | 55 minutes |
+| edge-mcp-caller (first run, 3 tools; not the 14-tool model) | Gemma 3 270M (LoRA BF16) | 3240 | 3 | 609 | 55 minutes |
 
 ### Takeaway
 

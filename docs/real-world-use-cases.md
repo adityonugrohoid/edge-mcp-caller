@@ -52,7 +52,7 @@ That's the specialist's territory.
 | API cost | $0 | Per-request billing |
 | Model size | 291MB | N/A (cloud-hosted) |
 | Offline capable | Yes | No |
-| Tool changes | Retrain (~2 hours) | Update prompt (instant) |
+| Tool changes | Retrain | Update prompt (instant) |
 
 The trade-off is explicit: the specialist trades **flexibility** (can't add tools without retraining) for **efficiency** (32x fewer tokens, local inference, zero cost). For fixed-tool edge deployments, that trade-off is clearly worth it.
 
