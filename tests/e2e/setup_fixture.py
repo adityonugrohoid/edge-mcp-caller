@@ -240,7 +240,7 @@ def create_files() -> None:
 def setup_git_repo() -> None:
     """Initialize a git repo with commits, branches, and staged changes."""
     # Init
-    run(["git", "init"])
+    run(["git", "init", "-b", "main"])
     run(["git", "config", "user.name", "Test User"])
     run(["git", "config", "user.email", "test@example.com"])
 

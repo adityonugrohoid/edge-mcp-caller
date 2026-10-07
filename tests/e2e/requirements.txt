@@ -1,0 +1,4 @@
+# Pinned dependencies for the e2e suite (tests/e2e/run_e2e.py and mcp/client.py)
+httpx==0.28.1
+mcp==1.30.0
+rich==15.0.0

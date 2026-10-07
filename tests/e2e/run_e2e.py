@@ -409,7 +409,8 @@ def save_results(results: list[dict], mcp_only: bool) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def main_async(mcp_only: bool, verbose: bool, reset: bool) -> None:
+async def main_async(mcp_only: bool, verbose: bool, reset: bool) -> bool:
+    """Run the suite. Returns True only if every test routed, executed, and passed its check."""
     # Ensure fixture exists
     if reset or not FIXTURE_DIR.exists():
         console.print("[dim]Setting up fixture...[/dim]")
@@ -422,7 +423,7 @@ async def main_async(mcp_only: bool, verbose: bool, reset: bool) -> None:
 
     if not FIXTURE_DIR.exists():
         console.print("[red]Fixture not found.[/red] Run: python tests/e2e/setup_fixture.py")
-        return
+        return False
 
     mode = "MCP-only" if mcp_only else "Full pipeline (model → MCP)"
     console.print(Panel(
@@ -435,6 +436,7 @@ async def main_async(mcp_only: bool, verbose: bool, reset: bool) -> None:
     results = await run_tests(mcp_only, verbose)
     show_summary(results, mcp_only)
     save_results(results, mcp_only)
+    return all(r["tool_correct"] and r["mcp_success"] and r["check_passed"] for r in results)
 
 
 def main() -> None:
@@ -446,7 +448,8 @@ def main() -> None:
     parser.add_argument("--verbose", action="store_true", help="Show full detail per test")
     parser.add_argument("--reset", action="store_true", help="Re-create fixture before running")
     args = parser.parse_args()
-    asyncio.run(main_async(args.mcp_only, args.verbose, args.reset))
+    if not asyncio.run(main_async(args.mcp_only, args.verbose, args.reset)):
+        sys.exit(1)
 
 
 if __name__ == "__main__":
