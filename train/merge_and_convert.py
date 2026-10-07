@@ -27,7 +27,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ADAPTER_DIR = PROJECT_ROOT / "models" / "adapter"
 MERGED_DIR = PROJECT_ROOT / "models" / "merged"
 GGUF_DIR = PROJECT_ROOT / "models" / "gguf"
-MODELFILE_PATH = PROJECT_ROOT / "models" / "Modelfile"
+# Tracked Modelfile; its FROM line expects the quantized GGUF next to it
+MODELFILE_PATH = PROJECT_ROOT / "Modelfile"
 
 LLAMA_CPP_DIR = Path.home() / ".unsloth" / "llama.cpp"
 CONVERTER_SCRIPT = LLAMA_CPP_DIR / "convert_hf_to_gguf.py"
@@ -36,24 +37,6 @@ QUANTIZER_BIN = LLAMA_CPP_DIR / "build" / "bin" / "llama-quantize"
 BASE_MODEL = "unsloth/gemma-3-270m-it"
 OLLAMA_MODEL_NAME = "edge-mcp-caller"
 QUANTIZATION = "Q8_0"  # High quality for tiny model
-
-# Gemma 3 Ollama template — copied from `ollama show gemma3:270m --modelfile`
-OLLAMA_TEMPLATE = """{{- $systemPromptAdded := false }}
-{{- range $i, $_ := .Messages }}
-{{- $last := eq (len (slice $.Messages $i)) 1 }}
-{{- if eq .Role "user" }}<start_of_turn>user
-{{- if (and (not $systemPromptAdded) $.System) }}
-{{- $systemPromptAdded = true }}
-{{ $.System }}
-{{ end }}
-{{ .Content }}<end_of_turn>
-{{ if $last }}<start_of_turn>model
-{{ end }}
-{{- else if eq .Role "assistant" }}<start_of_turn>model
-{{ .Content }}{{ if not $last }}<end_of_turn>
-{{ end }}
-{{- end }}
-{{- end }}"""
 
 console = Console()
 
@@ -149,7 +132,7 @@ def main() -> None:
 
     # 6. Quantize BF16 → Q8_0
     console.print(f"[bold]6. Quantizing BF16 → {QUANTIZATION}...[/bold]")
-    quantized_gguf = GGUF_DIR / f"{OLLAMA_MODEL_NAME}-{QUANTIZATION.lower()}.gguf"
+    quantized_gguf = MODELFILE_PATH.parent / f"{OLLAMA_MODEL_NAME}-{QUANTIZATION.lower()}.gguf"
 
     result = subprocess.run(
         [
@@ -171,18 +154,12 @@ def main() -> None:
     bf16_gguf.unlink()
     console.print("   Cleaned up BF16 intermediate.\n")
 
-    # 7. Generate Modelfile
-    console.print("[bold]7. Generating Modelfile...[/bold]")
-
-    modelfile_content = f"""FROM {quantized_gguf}
-TEMPLATE \"\"\"{OLLAMA_TEMPLATE}\"\"\"
-PARAMETER stop <end_of_turn>
-PARAMETER top_p 0.95
-PARAMETER top_k 64
-"""
-
-    MODELFILE_PATH.write_text(modelfile_content)
-    console.print(f"   Modelfile saved: {MODELFILE_PATH}\n")
+    # 7. Check the tracked Modelfile
+    console.print("[bold]7. Checking Modelfile...[/bold]")
+    if not MODELFILE_PATH.exists():
+        console.print(f"[red]Modelfile not found: {MODELFILE_PATH}[/red]")
+        sys.exit(1)
+    console.print(f"   Using {MODELFILE_PATH}\n")
 
     # 8. Register with Ollama
     console.print(f"[bold]8. Registering with Ollama as '{OLLAMA_MODEL_NAME}'...[/bold]")
