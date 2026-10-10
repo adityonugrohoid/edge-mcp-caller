@@ -153,6 +153,7 @@ python train/merge_and_convert.py
 python eval/benchmark.py                    # 14-tool, 30/tool
 python eval/benchmark.py --subset 3         # 3-tool subset
 python eval/benchmark.py --subset all       # full scaling curve
+python eval/plot_scaling.py                 # chart the four subsets to demos/scaling.png
 
 # Step 5: Interactive demo (query to model to MCP servers to result)
 python demo/cli.py                          # interactive, auto-detect git
@@ -219,6 +220,10 @@ No degradation found. The 270M specialist handles 14 tools as well as 3.
 
 ### Baseline scaling (combined accuracy)
 
+![Combined accuracy at 3, 5, 8 and 14 tools: the specialist stays above 98% while the three baselines sit between 10% and 42%](demos/scaling.png)
+
+Drawn by `eval/plot_scaling.py` from the four subset files under `results/`; the table below holds the same numbers.
+
 | Model | 3-tool | 5-tool | 8-tool | 14-tool |
 |-------|--------|--------|--------|---------|
 | **Specialist** | **98.9%** | **99.3%** | **99.2%** | **99.5%** |
@@ -280,7 +285,8 @@ edge-mcp-caller/
 │   ├── finetune.py                 # LoRA fine-tune via Unsloth
 │   └── merge_and_convert.py        # Merge adapter + GGUF conversion
 ├── eval/
-│   └── benchmark.py                # Scaling benchmark (3/5/8/14 tools, 4 models)
+│   ├── benchmark.py                # Scaling benchmark (3/5/8/14 tools, 4 models)
+│   └── plot_scaling.py             # Chart of the four subsets, drawn into demos/scaling.png
 ├── mcp/
 │   └── client.py                   # JSON to MCP tools/call bridge (14 tools, 2 servers)
 ├── demo/
@@ -288,9 +294,10 @@ edge-mcp-caller/
 ├── tests/
 │   └── e2e/                        # End-to-end pipeline runner + fixture setup
 ├── docs/                           # Benchmark, methodology, generation, and use-case docs
-├── demos/                          # e2e SVG/GIF + per-tool casts and GIFs
+├── demos/                          # e2e SVG/GIF, per-tool casts and GIFs, the scaling chart
 ├── data/generated/, data/train.jsonl, data/eval.jsonl   # gitignored, generated
 ├── models/, results/               # gitignored adapters, merged model, and benchmark outputs
+│                                   # (the four scaling subset files in results/ are tracked)
 ├── Modelfile                       # Ollama Modelfile for the released GGUF
 ├── NOTICE                          # Gemma Terms of Use notice for the weights
 └── requirements.txt

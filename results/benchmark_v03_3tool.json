@@ -1,0 +1,222 @@
+{
+  "subset_size": 3,
+  "subset_tools": [
+    "list_directory",
+    "read_file",
+    "search_files"
+  ],
+  "models": {
+    "edge-mcp-caller": {
+      "description": "Specialist (tools in weights)",
+      "ollama_name": "edge-mcp-caller:latest",
+      "total": 90,
+      "errors": 0,
+      "tool_accuracy": 1.0,
+      "args_accuracy": 0.9888888888888889,
+      "combined_accuracy": 0.9888888888888889,
+      "per_tool": {
+        "list_directory": {
+          "count": 30,
+          "tool_acc": 1.0,
+          "args_acc": 0.9666666666666667,
+          "combined_acc": 0.9666666666666667
+        },
+        "read_file": {
+          "count": 30,
+          "tool_acc": 1.0,
+          "args_acc": 1.0,
+          "combined_acc": 1.0
+        },
+        "search_files": {
+          "count": 30,
+          "tool_acc": 1.0,
+          "args_acc": 1.0,
+          "combined_acc": 1.0
+        }
+      },
+      "per_category": {
+        "clean": {
+          "count": 63,
+          "tool_acc": 1.0,
+          "args_acc": 0.9841269841269841,
+          "combined_acc": 0.9841269841269841
+        },
+        "messy": {
+          "count": 12,
+          "tool_acc": 1.0,
+          "args_acc": 1.0,
+          "combined_acc": 1.0
+        },
+        "disambiguation": {
+          "count": 15,
+          "tool_acc": 1.0,
+          "args_acc": 1.0,
+          "combined_acc": 1.0
+        }
+      },
+      "avg_prompt_tokens": 18.233333333333334,
+      "avg_latency_ms": 148.6069069111111,
+      "median_latency_ms": 147.324177,
+      "p95_latency_ms": 180.549147
+    },
+    "gemma3-270m-raw": {
+      "description": "Raw Gemma 3 270M (few-shot prompt)",
+      "ollama_name": "gemma3:270m",
+      "total": 90,
+      "errors": 1,
+      "tool_accuracy": 0.6111111111111112,
+      "args_accuracy": 0.17777777777777778,
+      "combined_accuracy": 0.13333333333333333,
+      "per_tool": {
+        "list_directory": {
+          "count": 30,
+          "tool_acc": 0.4666666666666667,
+          "args_acc": 0.06666666666666667,
+          "combined_acc": 0.06666666666666667
+        },
+        "read_file": {
+          "count": 30,
+          "tool_acc": 0.4666666666666667,
+          "args_acc": 0.43333333333333335,
+          "combined_acc": 0.3
+        },
+        "search_files": {
+          "count": 30,
+          "tool_acc": 0.9,
+          "args_acc": 0.03333333333333333,
+          "combined_acc": 0.03333333333333333
+        }
+      },
+      "per_category": {
+        "clean": {
+          "count": 63,
+          "tool_acc": 0.6984126984126984,
+          "args_acc": 0.20634920634920634,
+          "combined_acc": 0.19047619047619047
+        },
+        "messy": {
+          "count": 12,
+          "tool_acc": 0.5,
+          "args_acc": 0.0,
+          "combined_acc": 0.0
+        },
+        "disambiguation": {
+          "count": 15,
+          "tool_acc": 0.3333333333333333,
+          "args_acc": 0.2,
+          "combined_acc": 0.0
+        }
+      },
+      "avg_prompt_tokens": 265.23595505617976,
+      "avg_latency_ms": 487.967612235955,
+      "median_latency_ms": 478.236692,
+      "p95_latency_ms": 592.345924
+    },
+    "functiongemma-270m": {
+      "description": "FunctionGemma (Ollama tools API)",
+      "ollama_name": "functiongemma:270m",
+      "total": 90,
+      "errors": 0,
+      "tool_accuracy": 0.3,
+      "args_accuracy": 0.2222222222222222,
+      "combined_accuracy": 0.2,
+      "per_tool": {
+        "list_directory": {
+          "count": 30,
+          "tool_acc": 0.4,
+          "args_acc": 0.4,
+          "combined_acc": 0.3333333333333333
+        },
+        "read_file": {
+          "count": 30,
+          "tool_acc": 0.23333333333333334,
+          "args_acc": 0.16666666666666666,
+          "combined_acc": 0.16666666666666666
+        },
+        "search_files": {
+          "count": 30,
+          "tool_acc": 0.26666666666666666,
+          "args_acc": 0.1,
+          "combined_acc": 0.1
+        }
+      },
+      "per_category": {
+        "clean": {
+          "count": 63,
+          "tool_acc": 0.3492063492063492,
+          "args_acc": 0.23809523809523808,
+          "combined_acc": 0.2222222222222222
+        },
+        "messy": {
+          "count": 12,
+          "tool_acc": 0.3333333333333333,
+          "args_acc": 0.25,
+          "combined_acc": 0.25
+        },
+        "disambiguation": {
+          "count": 15,
+          "tool_acc": 0.06666666666666667,
+          "args_acc": 0.13333333333333333,
+          "combined_acc": 0.06666666666666667
+        }
+      },
+      "avg_prompt_tokens": 262.23333333333335,
+      "avg_latency_ms": 179.73665416666668,
+      "median_latency_ms": 162.95356,
+      "p95_latency_ms": 286.844811
+    },
+    "gpt-oss-120b": {
+      "description": "GPT-OSS 120B (NIM API, ceiling)",
+      "ollama_name": "openai/gpt-oss-120b",
+      "total": 90,
+      "errors": 0,
+      "tool_accuracy": 0.9,
+      "args_accuracy": 0.3333333333333333,
+      "combined_accuracy": 0.3333333333333333,
+      "per_tool": {
+        "list_directory": {
+          "count": 30,
+          "tool_acc": 1.0,
+          "args_acc": 0.16666666666666666,
+          "combined_acc": 0.16666666666666666
+        },
+        "read_file": {
+          "count": 30,
+          "tool_acc": 0.7666666666666667,
+          "args_acc": 0.7666666666666667,
+          "combined_acc": 0.7666666666666667
+        },
+        "search_files": {
+          "count": 30,
+          "tool_acc": 0.9333333333333333,
+          "args_acc": 0.06666666666666667,
+          "combined_acc": 0.06666666666666667
+        }
+      },
+      "per_category": {
+        "clean": {
+          "count": 63,
+          "tool_acc": 0.9841269841269841,
+          "args_acc": 0.3968253968253968,
+          "combined_acc": 0.3968253968253968
+        },
+        "messy": {
+          "count": 12,
+          "tool_acc": 0.8333333333333334,
+          "args_acc": 0.25,
+          "combined_acc": 0.25
+        },
+        "disambiguation": {
+          "count": 15,
+          "tool_acc": 0.6,
+          "args_acc": 0.13333333333333333,
+          "combined_acc": 0.13333333333333333
+        }
+      },
+      "avg_prompt_tokens": 244.25555555555556,
+      "avg_latency_ms": 1013.9138293220539,
+      "median_latency_ms": 814.9835220028763,
+      "p95_latency_ms": 2515.295386001526
+    }
+  }
+}

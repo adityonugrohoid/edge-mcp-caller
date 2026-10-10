@@ -18,5 +18,8 @@ mcp
 # CLI output
 rich
 
+# Figures
+matplotlib
+
 # Config
 python-dotenv
