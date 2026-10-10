@@ -1,0 +1,347 @@
+{
+  "subset_size": 8,
+  "subset_tools": [
+    "list_directory",
+    "read_file",
+    "search_files",
+    "write_file",
+    "create_directory",
+    "edit_file",
+    "move_file",
+    "directory_tree"
+  ],
+  "models": {
+    "edge-mcp-caller": {
+      "description": "Specialist (tools in weights)",
+      "ollama_name": "edge-mcp-caller:latest",
+      "total": 240,
+      "errors": 0,
+      "tool_accuracy": 0.9958333333333333,
+      "args_accuracy": 0.9958333333333333,
+      "combined_accuracy": 0.9916666666666667,
+      "per_tool": {
+        "list_directory": {
+          "count": 30,
+          "tool_acc": 1.0,
+          "args_acc": 0.9666666666666667,
+          "combined_acc": 0.9666666666666667
+        },
+        "read_file": {
+          "count": 30,
+          "tool_acc": 1.0,
+          "args_acc": 1.0,
+          "combined_acc": 1.0
+        },
+        "search_files": {
+          "count": 30,
+          "tool_acc": 1.0,
+          "args_acc": 1.0,
+          "combined_acc": 1.0
+        },
+        "write_file": {
+          "count": 30,
+          "tool_acc": 1.0,
+          "args_acc": 1.0,
+          "combined_acc": 1.0
+        },
+        "create_directory": {
+          "count": 30,
+          "tool_acc": 1.0,
+          "args_acc": 1.0,
+          "combined_acc": 1.0
+        },
+        "edit_file": {
+          "count": 30,
+          "tool_acc": 1.0,
+          "args_acc": 1.0,
+          "combined_acc": 1.0
+        },
+        "move_file": {
+          "count": 30,
+          "tool_acc": 1.0,
+          "args_acc": 1.0,
+          "combined_acc": 1.0
+        },
+        "directory_tree": {
+          "count": 30,
+          "tool_acc": 0.9666666666666667,
+          "args_acc": 1.0,
+          "combined_acc": 0.9666666666666667
+        }
+      },
+      "per_category": {
+        "clean": {
+          "count": 167,
+          "tool_acc": 1.0,
+          "args_acc": 0.9940119760479041,
+          "combined_acc": 0.9940119760479041
+        },
+        "messy": {
+          "count": 32,
+          "tool_acc": 1.0,
+          "args_acc": 1.0,
+          "combined_acc": 1.0
+        },
+        "disambiguation": {
+          "count": 41,
+          "tool_acc": 0.975609756097561,
+          "args_acc": 1.0,
+          "combined_acc": 0.975609756097561
+        }
+      },
+      "avg_prompt_tokens": 21.058333333333334,
+      "avg_latency_ms": 163.668920625,
+      "median_latency_ms": 150.842906,
+      "p95_latency_ms": 272.179552
+    },
+    "gemma3-270m-raw": {
+      "description": "Raw Gemma 3 270M (few-shot prompt)",
+      "ollama_name": "gemma3:270m",
+      "total": 240,
+      "errors": 3,
+      "tool_accuracy": 0.48333333333333334,
+      "args_accuracy": 0.12916666666666668,
+      "combined_accuracy": 0.10416666666666667,
+      "per_tool": {
+        "list_directory": {
+          "count": 30,
+          "tool_acc": 0.8666666666666667,
+          "args_acc": 0.06666666666666667,
+          "combined_acc": 0.06666666666666667
+        },
+        "read_file": {
+          "count": 30,
+          "tool_acc": 0.43333333333333335,
+          "args_acc": 0.16666666666666666,
+          "combined_acc": 0.1
+        },
+        "search_files": {
+          "count": 30,
+          "tool_acc": 0.26666666666666666,
+          "args_acc": 0.13333333333333333,
+          "combined_acc": 0.1
+        },
+        "write_file": {
+          "count": 30,
+          "tool_acc": 0.3,
+          "args_acc": 0.1,
+          "combined_acc": 0.1
+        },
+        "create_directory": {
+          "count": 30,
+          "tool_acc": 0.4,
+          "args_acc": 0.03333333333333333,
+          "combined_acc": 0.03333333333333333
+        },
+        "edit_file": {
+          "count": 30,
+          "tool_acc": 0.1,
+          "args_acc": 0.0,
+          "combined_acc": 0.0
+        },
+        "move_file": {
+          "count": 30,
+          "tool_acc": 0.6666666666666666,
+          "args_acc": 0.5,
+          "combined_acc": 0.43333333333333335
+        },
+        "directory_tree": {
+          "count": 30,
+          "tool_acc": 0.8333333333333334,
+          "args_acc": 0.03333333333333333,
+          "combined_acc": 0.0
+        }
+      },
+      "per_category": {
+        "clean": {
+          "count": 167,
+          "tool_acc": 0.5688622754491018,
+          "args_acc": 0.16167664670658682,
+          "combined_acc": 0.1437125748502994
+        },
+        "messy": {
+          "count": 32,
+          "tool_acc": 0.5,
+          "args_acc": 0.03125,
+          "combined_acc": 0.03125
+        },
+        "disambiguation": {
+          "count": 41,
+          "tool_acc": 0.12195121951219512,
+          "args_acc": 0.07317073170731707,
+          "combined_acc": 0.0
+        }
+      },
+      "avg_prompt_tokens": 708.1223628691984,
+      "avg_latency_ms": 669.8692526413502,
+      "median_latency_ms": 645.980932,
+      "p95_latency_ms": 854.670002
+    },
+    "functiongemma-270m": {
+      "description": "FunctionGemma (Ollama tools API)",
+      "ollama_name": "functiongemma:270m",
+      "total": 240,
+      "errors": 0,
+      "tool_accuracy": 0.3,
+      "args_accuracy": 0.1375,
+      "combined_accuracy": 0.1125,
+      "per_tool": {
+        "list_directory": {
+          "count": 30,
+          "tool_acc": 0.26666666666666666,
+          "args_acc": 0.26666666666666666,
+          "combined_acc": 0.1
+        },
+        "read_file": {
+          "count": 30,
+          "tool_acc": 0.23333333333333334,
+          "args_acc": 0.16666666666666666,
+          "combined_acc": 0.16666666666666666
+        },
+        "search_files": {
+          "count": 30,
+          "tool_acc": 0.6,
+          "args_acc": 0.23333333333333334,
+          "combined_acc": 0.23333333333333334
+        },
+        "write_file": {
+          "count": 30,
+          "tool_acc": 0.16666666666666666,
+          "args_acc": 0.06666666666666667,
+          "combined_acc": 0.06666666666666667
+        },
+        "create_directory": {
+          "count": 30,
+          "tool_acc": 0.26666666666666666,
+          "args_acc": 0.1,
+          "combined_acc": 0.06666666666666667
+        },
+        "edit_file": {
+          "count": 30,
+          "tool_acc": 0.3,
+          "args_acc": 0.1,
+          "combined_acc": 0.1
+        },
+        "move_file": {
+          "count": 30,
+          "tool_acc": 0.03333333333333333,
+          "args_acc": 0.0,
+          "combined_acc": 0.0
+        },
+        "directory_tree": {
+          "count": 30,
+          "tool_acc": 0.5333333333333333,
+          "args_acc": 0.16666666666666666,
+          "combined_acc": 0.16666666666666666
+        }
+      },
+      "per_category": {
+        "clean": {
+          "count": 167,
+          "tool_acc": 0.3532934131736527,
+          "args_acc": 0.1437125748502994,
+          "combined_acc": 0.11377245508982035
+        },
+        "messy": {
+          "count": 32,
+          "tool_acc": 0.28125,
+          "args_acc": 0.1875,
+          "combined_acc": 0.1875
+        },
+        "disambiguation": {
+          "count": 41,
+          "tool_acc": 0.0975609756097561,
+          "args_acc": 0.07317073170731707,
+          "combined_acc": 0.04878048780487805
+        }
+      },
+      "avg_prompt_tokens": 681.0583333333333,
+      "avg_latency_ms": 248.8707734,
+      "median_latency_ms": 259.059302,
+      "p95_latency_ms": 392.666463
+    },
+    "gpt-oss-120b": {
+      "description": "GPT-OSS 120B (NIM API, ceiling)",
+      "ollama_name": "openai/gpt-oss-120b",
+      "total": 240,
+      "errors": 0,
+      "tool_accuracy": 0.7125,
+      "args_accuracy": 0.2791666666666667,
+      "combined_accuracy": 0.275,
+      "per_tool": {
+        "list_directory": {
+          "count": 30,
+          "tool_acc": 1.0,
+          "args_acc": 0.13333333333333333,
+          "combined_acc": 0.13333333333333333
+        },
+        "read_file": {
+          "count": 30,
+          "tool_acc": 0.8666666666666667,
+          "args_acc": 0.8666666666666667,
+          "combined_acc": 0.8666666666666667
+        },
+        "search_files": {
+          "count": 30,
+          "tool_acc": 0.9333333333333333,
+          "args_acc": 0.03333333333333333,
+          "combined_acc": 0.03333333333333333
+        },
+        "write_file": {
+          "count": 30,
+          "tool_acc": 0.3333333333333333,
+          "args_acc": 0.3333333333333333,
+          "combined_acc": 0.3333333333333333
+        },
+        "create_directory": {
+          "count": 30,
+          "tool_acc": 0.7333333333333333,
+          "args_acc": 0.03333333333333333,
+          "combined_acc": 0.0
+        },
+        "edit_file": {
+          "count": 30,
+          "tool_acc": 0.5,
+          "args_acc": 0.5,
+          "combined_acc": 0.5
+        },
+        "move_file": {
+          "count": 30,
+          "tool_acc": 0.3333333333333333,
+          "args_acc": 0.26666666666666666,
+          "combined_acc": 0.26666666666666666
+        },
+        "directory_tree": {
+          "count": 30,
+          "tool_acc": 1.0,
+          "args_acc": 0.06666666666666667,
+          "combined_acc": 0.06666666666666667
+        }
+      },
+      "per_category": {
+        "clean": {
+          "count": 167,
+          "tool_acc": 0.7844311377245509,
+          "args_acc": 0.30538922155688625,
+          "combined_acc": 0.2994011976047904
+        },
+        "messy": {
+          "count": 32,
+          "tool_acc": 0.65625,
+          "args_acc": 0.3125,
+          "combined_acc": 0.3125
+        },
+        "disambiguation": {
+          "count": 41,
+          "tool_acc": 0.4634146341463415,
+          "args_acc": 0.14634146341463414,
+          "combined_acc": 0.14634146341463414
+        }
+      },
+      "avg_prompt_tokens": 478.6333333333333,
+      "avg_latency_ms": 1415.8713307668525,
+      "median_latency_ms": 841.6900700030965,
+      "p95_latency_ms": 3059.775959001854
+    }
+  }
+}

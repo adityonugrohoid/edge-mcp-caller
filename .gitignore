@@ -39,8 +39,12 @@ data/archive/
 # Archive (internal drafts, not tracked)
 archive/
 
-# Results (regenerated)
-results/
+# Results (regenerated), except the four scaling subsets the readme chart is drawn from
+results/*
+!results/benchmark_v03_3tool.json
+!results/benchmark_v03_5tool.json
+!results/benchmark_v03_8tool.json
+!results/benchmark_v03_14tool.json
 
 # E2E test fixture (created by setup script)
 tests/e2e/fixture/
